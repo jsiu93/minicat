@@ -1,0 +1,28 @@
+{
+  "name": "minicat",
+  "version": "1.0.0",
+  "description": "数据库结构与数据比对同步工具",
+  "private": true,
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "dev:frontend": "cd frontend && npm run dev",
+    "build:frontend": "cd frontend && npm run build",
+    "dev:backend": "cd backend && mvn spring-boot:run",
+    "install:all": "cd frontend && npm install"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/joshuasiu/minicat.git"
+  },
+  "keywords": [
+    "database",
+    "diff",
+    "sync",
+    "mysql",
+    "postgresql"
+  ],
+  "author": "Joshua Siu",
+  "license": "MIT"
+}
