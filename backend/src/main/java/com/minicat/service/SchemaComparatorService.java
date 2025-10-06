@@ -127,11 +127,9 @@ public class SchemaComparatorService {
                             request
                     );
                 } else if (inSource) {
-                    // 表只在源库存在
-                    tableDiff = TableDiff.builder()
-                            .tableName(tableName)
-                            .diffType("ADD")
-                            .build();
+                    // 表只在源库存在 - 需要获取源表的完整结构
+                    tableDiff = getSourceTableStructure(sourceDs, tableName, sourceConn);
+                    tableDiff.setDiffType("ADD");
                     log.info("表 {} 需要在目标库中新增", tableName);
                 } else {
                     // 表只在目标库存在
@@ -193,6 +191,63 @@ public class SchemaComparatorService {
         }
 
         return tables;
+    }
+
+    /**
+     * 获取源表的完整结构（用于新增表）
+     */
+    private TableDiff getSourceTableStructure(
+            DataSource sourceDs,
+            String tableName,
+            ConnectionDto sourceConn) {
+
+        try {
+            // 获取源表的所有列
+            Map<String, ColumnDiff.ColumnInfo> sourceColumns = getColumns(sourceDs, tableName, sourceConn);
+
+            // 获取主键信息
+            List<String> primaryKeys = getPrimaryKeys(sourceDs, tableName, sourceConn);
+
+            // 构建列差异列表（所有列都标记为 ADD）
+            List<ColumnDiff> columnDiffs = new ArrayList<>();
+            for (ColumnDiff.ColumnInfo column : sourceColumns.values()) {
+                columnDiffs.add(ColumnDiff.builder()
+                        .columnName(column.getName())
+                        .diffType("ADD")
+                        .sourceColumn(column)
+                        .description("需要在目标库中添加此列")
+                        .build());
+            }
+
+            // 按列的位置排序
+            columnDiffs.sort((a, b) -> {
+                Integer posA = a.getSourceColumn().getOrdinalPosition();
+                Integer posB = b.getSourceColumn().getOrdinalPosition();
+                if (posA == null) return 1;
+                if (posB == null) return -1;
+                return posA.compareTo(posB);
+            });
+
+            TableDiff tableDiff = TableDiff.builder()
+                    .tableName(tableName)
+                    .diffType("ADD")
+                    .columnDiffs(columnDiffs)
+                    .indexDiffs(new ArrayList<>())
+                    .foreignKeyDiffs(new ArrayList<>())
+                    .build();
+
+            // 设置主键信息（存储在 TableDiff 中，用于生成 SQL）
+            tableDiff.setPrimaryKeys(primaryKeys);
+
+            return tableDiff;
+
+        } catch (Exception e) {
+            log.error("获取源表 {} 结构失败", tableName, e);
+            return TableDiff.builder()
+                    .tableName(tableName)
+                    .diffType("ADD")
+                    .build();
+        }
     }
 
     /**
@@ -485,5 +540,64 @@ public class SchemaComparatorService {
         // 完整实现需要使用 DatabaseMetaData.getImportedKeys()
         log.info("外键比对功能待完善");
         return new ArrayList<>();
+    }
+
+    /**
+     * 获取表的主键列
+     *
+     * @param dataSource 数据源
+     * @param tableName 表名
+     * @param connection 连接配置
+     * @return 主键列名列表（按序号排序）
+     */
+    private List<String> getPrimaryKeys(DataSource dataSource, String tableName, ConnectionDto connection) throws SQLException {
+        List<String> primaryKeys = new ArrayList<>();
+
+        try (Connection conn = dataSource.getConnection()) {
+            DatabaseMetaData metaData = conn.getMetaData();
+
+            String catalog = null;
+            String schema = null;
+
+            // MySQL 需要指定 catalog（数据库名）
+            if ("mysql".equals(connection.getType())) {
+                catalog = connection.getDatabase();
+            }
+
+            // PostgreSQL 需要指定 schema
+            if ("postgresql".equals(connection.getType())) {
+                schema = connection.getDatabase();
+            }
+
+            log.info("获取表 {} 的主键信息: catalog={}, schema={}", tableName, catalog, schema);
+
+            // 获取主键信息
+            try (ResultSet rs = metaData.getPrimaryKeys(catalog, schema, tableName)) {
+                // 使用 TreeMap 按 KEY_SEQ 排序
+                java.util.Map<Integer, String> pkMap = new java.util.TreeMap<>();
+
+                while (rs.next()) {
+                    String columnName = rs.getString("COLUMN_NAME");
+                    String pkTableName = rs.getString("TABLE_NAME");
+                    int keySeq = rs.getInt("KEY_SEQ");
+
+                    // 确保是当前表的主键（防止跨库匹配）
+                    if (tableName.equalsIgnoreCase(pkTableName)) {
+                        pkMap.put(keySeq, columnName);
+                        log.info("找到主键列: 表={}, 列={}, 序号={}", pkTableName, columnName, keySeq);
+                    }
+                }
+
+                primaryKeys.addAll(pkMap.values());
+            }
+
+            if (!primaryKeys.isEmpty()) {
+                log.info("表 {} 的主键: {}", tableName, primaryKeys);
+            } else {
+                log.info("表 {} 没有主键", tableName);
+            }
+        }
+
+        return primaryKeys;
     }
 }

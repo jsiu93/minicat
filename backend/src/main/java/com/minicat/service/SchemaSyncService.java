@@ -153,12 +153,122 @@ public class SchemaSyncService {
      */
     private List<String> generateCreateTableSql(TableDiff tableDiff, String dbType) {
         List<String> sqls = new ArrayList<>();
-        
-        // 简化实现：只提示需要手动创建
-        String comment = String.format("-- 需要创建表: %s (请手动编写 CREATE TABLE 语句)", tableDiff.getTableName());
-        sqls.add(comment);
-        
+        String tableName = tableDiff.getTableName();
+
+        // 检查是否有列信息
+        if (tableDiff.getColumnDiffs() == null || tableDiff.getColumnDiffs().isEmpty()) {
+            // 没有列信息，只能生成注释
+            String comment = String.format("-- 需要创建表: %s (缺少列信息，请手动编写 CREATE TABLE 语句)", tableName);
+            sqls.add(comment);
+            return sqls;
+        }
+
+        // 构建 CREATE TABLE 语句
+        StringBuilder sql = new StringBuilder();
+
+        if ("mysql".equals(dbType)) {
+            sql.append("CREATE TABLE `").append(tableName).append("` (\n");
+        } else if ("postgresql".equals(dbType)) {
+            sql.append("CREATE TABLE \"").append(tableName).append("\" (\n");
+        } else {
+            sql.append("CREATE TABLE ").append(tableName).append(" (\n");
+        }
+
+        // 添加列定义
+        List<String> columnDefs = new ArrayList<>();
+
+        for (ColumnDiff columnDiff : tableDiff.getColumnDiffs()) {
+            if ("ADD".equals(columnDiff.getDiffType()) && columnDiff.getSourceColumn() != null) {
+                ColumnDiff.ColumnInfo column = columnDiff.getSourceColumn();
+                String columnDef = buildColumnDefinition(column, dbType);
+                columnDefs.add("  " + columnDef);
+            }
+        }
+
+        sql.append(String.join(",\n", columnDefs));
+
+        // 添加主键约束（从 TableDiff 中获取）
+        List<String> primaryKeys = tableDiff.getPrimaryKeys();
+        if (primaryKeys != null && !primaryKeys.isEmpty()) {
+            sql.append(",\n  PRIMARY KEY (");
+            if ("mysql".equals(dbType)) {
+                sql.append(primaryKeys.stream()
+                    .map(pk -> "`" + pk + "`")
+                    .collect(java.util.stream.Collectors.joining(", ")));
+            } else if ("postgresql".equals(dbType)) {
+                sql.append(primaryKeys.stream()
+                    .map(pk -> "\"" + pk + "\"")
+                    .collect(java.util.stream.Collectors.joining(", ")));
+            } else {
+                sql.append(String.join(", ", primaryKeys));
+            }
+            sql.append(")");
+        }
+
+        sql.append("\n)");
+
+        // MySQL 特有的表选项
+        if ("mysql".equals(dbType)) {
+            sql.append(" ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+        }
+
+        sql.append(";");
+
+        sqls.add(sql.toString());
         return sqls;
+    }
+
+    /**
+     * 构建列定义
+     */
+    private String buildColumnDefinition(ColumnDiff.ColumnInfo column, String dbType) {
+        StringBuilder def = new StringBuilder();
+
+        // 列名
+        if ("mysql".equals(dbType)) {
+            def.append("`").append(column.getName()).append("`");
+        } else if ("postgresql".equals(dbType)) {
+            def.append("\"").append(column.getName()).append("\"");
+        } else {
+            def.append(column.getName());
+        }
+
+        def.append(" ");
+
+        // 数据类型
+        def.append(column.getDataType());
+
+        // 可空性
+        if (Boolean.FALSE.equals(column.getNullable())) {
+            def.append(" NOT NULL");
+        } else {
+            def.append(" NULL");
+        }
+
+        // 默认值
+        if (column.getDefaultValue() != null && !column.getDefaultValue().isEmpty()) {
+            def.append(" DEFAULT ").append(column.getDefaultValue());
+        }
+
+        // 自增
+        if (Boolean.TRUE.equals(column.getAutoIncrement())) {
+            if ("mysql".equals(dbType)) {
+                def.append(" AUTO_INCREMENT");
+            } else if ("postgresql".equals(dbType)) {
+                // PostgreSQL 的自增在类型中处理（SERIAL）
+                // 这里不需要额外处理
+            }
+        }
+
+        // 注释
+        if (column.getComment() != null && !column.getComment().isEmpty()) {
+            if ("mysql".equals(dbType)) {
+                def.append(" COMMENT '").append(column.getComment()).append("'");
+            }
+            // PostgreSQL 的注释需要单独的 COMMENT ON 语句
+        }
+
+        return def.toString();
     }
     
     /**

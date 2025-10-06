@@ -66,7 +66,12 @@ public class TableDiff {
      * 排序规则差异（MySQL）
      */
     private String collationDiff;
-    
+
+    /**
+     * 主键列名列表（用于生成 CREATE TABLE）
+     */
+    private List<String> primaryKeys;
+
     /**
      * 是否有差异
      */
