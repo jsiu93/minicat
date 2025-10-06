@@ -45,5 +45,13 @@ export default {
     getAll: (params) => api.get('/tasks', { params }),
     getById: (id) => api.get(`/tasks/${id}`),
     create: (type) => api.post('/tasks', null, { params: { type } })
+  },
+
+  // Schema APIs
+  schema: {
+    getTables: (connectionId) => api.get(`/schema/tables/${connectionId}`),
+    compare: (data) => api.post('/schema/compare', data),
+    generateSyncSql: (data) => api.post('/schema/generate-sync-sql', data),
+    executeSync: (data) => api.post('/schema/sync', data)
   }
 }
