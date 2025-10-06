@@ -28,8 +28,10 @@ frontend/yarn-error.log*
 frontend/pnpm-debug.log*
 
 # Data & Logs
-data/
-logs/
+data/*
+!data/.gitkeep
+logs/*
+!logs/.gitkeep
 *.db
 *.db-journal
 
