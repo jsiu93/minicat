@@ -28,10 +28,9 @@ public class ConnectionController {
     @GetMapping("/{id}")
     @Operation(summary = "Get connection by ID")
     public ResponseEntity<ConnectionDto> getConnectionById(@PathVariable String id) {
+        // 如果连接不存在，Service 层会抛出 ConnectionNotFoundException
+        // 全局异常处理器会自动处理并返回 404
         ConnectionDto connection = connectionService.getConnectionById(id);
-        if (connection == null) {
-            return ResponseEntity.notFound().build();
-        }
         return ResponseEntity.ok(connection);
     }
     
@@ -47,10 +46,8 @@ public class ConnectionController {
     public ResponseEntity<ConnectionDto> updateConnection(
             @PathVariable String id,
             @Valid @RequestBody ConnectionDto connection) {
+        // 如果连接不存在，Service 层会抛出 ConnectionNotFoundException
         ConnectionDto updated = connectionService.updateConnection(id, connection);
-        if (updated == null) {
-            return ResponseEntity.notFound().build();
-        }
         return ResponseEntity.ok(updated);
     }
     
@@ -67,11 +64,12 @@ public class ConnectionController {
     @PostMapping("/{id}/test")
     @Operation(summary = "Test database connection")
     public ResponseEntity<Boolean> testConnection(@PathVariable String id) {
+        // 获取连接配置（如果不存在会抛出异常）
         ConnectionDto connection = connectionService.getConnectionById(id);
-        if (connection == null) {
-            return ResponseEntity.notFound().build();
-        }
+
+        // 测试连接（如果失败会抛出异常）
         boolean success = connectionService.testConnection(connection);
+
         return ResponseEntity.ok(success);
     }
 }

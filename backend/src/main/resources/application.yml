@@ -46,6 +46,9 @@ minicat:
   logs:
     retention-days: 7
     path: ./logs
+  security:
+    # AES 加密密钥（生产环境应使用环境变量）
+    encryption-key: minicat-default-secret-key-2024
 
 # Springdoc OpenAPI
 springdoc:
