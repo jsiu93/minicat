@@ -28,6 +28,9 @@ frontend/yarn-debug.log*
 frontend/yarn-error.log*
 frontend/pnpm-debug.log*
 
+# Documentation (local only)
+docs/
+
 # Data & Logs
 data/*
 !data/.gitkeep
