@@ -251,7 +251,7 @@
           </v-expansion-panel>
         </v-expansion-panels>
 
-        <!-- 开始比对按钮 -->
+        <!-- 操作按钮 -->
         <v-row class="mt-4">
           <v-col cols="12" class="text-center">
             <v-btn
@@ -261,8 +261,19 @@
               :disabled="!canCompare"
               prepend-icon="mdi-play"
               @click="startCompare"
+              class="mr-2"
             >
               开始比对
+            </v-btn>
+            <v-btn
+              v-if="diffResult"
+              color="success"
+              size="large"
+              :disabled="!hasDataToSync"
+              prepend-icon="mdi-sync"
+              @click="showSyncDialog = true"
+            >
+              同步数据
             </v-btn>
             <div v-if="selectedTables.length > 0" class="text-caption text-grey mt-2">
               将比对 {{ selectedTables.length }} 个表
@@ -603,6 +614,244 @@
       </v-card>
     </v-dialog>
 
+    <!-- 数据同步对话框 -->
+    <v-dialog v-model="showSyncDialog" max-width="800" persistent>
+      <v-card>
+        <v-card-title class="d-flex align-center">
+          <v-icon class="mr-2" color="success">mdi-sync</v-icon>
+          数据同步配置
+        </v-card-title>
+
+        <v-divider></v-divider>
+
+        <v-card-text class="pa-6">
+          <!-- 同步选项 -->
+          <v-row>
+            <v-col cols="12">
+              <div class="text-subtitle-2 mb-2">同步操作类型</div>
+              <v-checkbox
+                v-model="syncOptions.executeInsert"
+                label="执行 INSERT（新增）"
+                color="primary"
+                density="compact"
+                hide-details
+              ></v-checkbox>
+              <v-checkbox
+                v-model="syncOptions.executeUpdate"
+                label="执行 UPDATE（更新）"
+                color="primary"
+                density="compact"
+                hide-details
+              ></v-checkbox>
+              <v-checkbox
+                v-model="syncOptions.executeDelete"
+                label="执行 DELETE（删除）"
+                color="error"
+                density="compact"
+                hide-details
+              ></v-checkbox>
+            </v-col>
+
+            <v-col cols="12" md="6">
+              <v-text-field
+                v-model.number="syncOptions.batchSize"
+                label="批次大小"
+                type="number"
+                variant="outlined"
+                density="compact"
+                hint="每批次处理的行数"
+                persistent-hint
+              ></v-text-field>
+            </v-col>
+
+            <v-col cols="12" md="6">
+              <v-switch
+                v-model="syncOptions.useTransaction"
+                label="使用事务"
+                color="primary"
+                density="compact"
+                hint="失败时自动回滚"
+                persistent-hint
+              ></v-switch>
+            </v-col>
+
+            <v-col cols="12">
+              <v-switch
+                v-model="syncOptions.dryRun"
+                label="仅生成 SQL（不执行）"
+                color="warning"
+                density="compact"
+                hint="只生成 SQL 语句，不实际执行同步"
+                persistent-hint
+              ></v-switch>
+            </v-col>
+          </v-row>
+
+          <!-- 同步预览 -->
+          <v-alert v-if="diffResult" type="info" variant="tonal" class="mt-4">
+            <div class="text-subtitle-2 mb-2">将要同步的数据：</div>
+            <div v-if="syncOptions.executeInsert">
+              <v-icon size="small" class="mr-1">mdi-plus-circle</v-icon>
+              新增：{{ totalInsertCount }} 行
+            </div>
+            <div v-if="syncOptions.executeUpdate">
+              <v-icon size="small" class="mr-1">mdi-pencil-circle</v-icon>
+              更新：{{ totalUpdateCount }} 行
+            </div>
+            <div v-if="syncOptions.executeDelete">
+              <v-icon size="small" class="mr-1">mdi-delete-circle</v-icon>
+              删除：{{ totalDeleteCount }} 行
+            </div>
+            <div class="mt-2 font-weight-bold">
+              总计：{{ totalSyncCount }} 行
+            </div>
+          </v-alert>
+
+          <!-- 警告提示 -->
+          <v-alert v-if="syncOptions.executeDelete && !syncOptions.dryRun" type="error" variant="tonal" class="mt-4">
+            <v-icon class="mr-2">mdi-alert</v-icon>
+            警告：删除操作不可逆，请谨慎操作！
+          </v-alert>
+        </v-card-text>
+
+        <v-divider></v-divider>
+
+        <v-card-actions>
+          <v-spacer></v-spacer>
+          <v-btn color="grey" variant="text" @click="showSyncDialog = false">
+            取消
+          </v-btn>
+          <v-btn
+            color="success"
+            variant="elevated"
+            :loading="syncing"
+            :disabled="!canSync"
+            @click="executeSyncData"
+          >
+            <v-icon start>mdi-check</v-icon>
+            {{ syncOptions.dryRun ? '生成 SQL' : '开始同步' }}
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- 同步结果对话框 -->
+    <v-dialog v-model="showSyncResultDialog" max-width="900" scrollable>
+      <v-card>
+        <v-card-title class="d-flex align-center">
+          <v-icon class="mr-2" :color="syncResult?.status === 'COMPLETED' ? 'success' : 'error'">
+            {{ syncResult?.status === 'COMPLETED' ? 'mdi-check-circle' : 'mdi-alert-circle' }}
+          </v-icon>
+          同步结果
+        </v-card-title>
+
+        <v-divider></v-divider>
+
+        <v-card-text class="pa-6">
+          <!-- 统计信息 -->
+          <v-row v-if="syncResult?.statistics">
+            <v-col cols="6" md="3">
+              <v-card variant="tonal" color="primary">
+                <v-card-text class="text-center">
+                  <div class="text-h4">{{ syncResult.statistics.tableCount }}</div>
+                  <div class="text-caption">表数量</div>
+                </v-card-text>
+              </v-card>
+            </v-col>
+            <v-col cols="6" md="3">
+              <v-card variant="tonal" color="success">
+                <v-card-text class="text-center">
+                  <div class="text-h4">{{ syncResult.statistics.totalInsertedRows }}</div>
+                  <div class="text-caption">新增行数</div>
+                </v-card-text>
+              </v-card>
+            </v-col>
+            <v-col cols="6" md="3">
+              <v-card variant="tonal" color="warning">
+                <v-card-text class="text-center">
+                  <div class="text-h4">{{ syncResult.statistics.totalUpdatedRows }}</div>
+                  <div class="text-caption">更新行数</div>
+                </v-card-text>
+              </v-card>
+            </v-col>
+            <v-col cols="6" md="3">
+              <v-card variant="tonal" color="error">
+                <v-card-text class="text-center">
+                  <div class="text-h4">{{ syncResult.statistics.totalDeletedRows }}</div>
+                  <div class="text-caption">删除行数</div>
+                </v-card-text>
+              </v-card>
+            </v-col>
+          </v-row>
+
+          <!-- 表同步结果列表 -->
+          <div v-if="syncResult?.tableSyncResults" class="mt-6">
+            <div class="text-subtitle-1 mb-3">表同步详情</div>
+            <v-table density="compact">
+              <thead>
+                <tr>
+                  <th>表名</th>
+                  <th>新增</th>
+                  <th>更新</th>
+                  <th>删除</th>
+                  <th>耗时</th>
+                  <th>状态</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="result in syncResult.tableSyncResults" :key="result.tableName">
+                  <td>{{ result.tableName }}</td>
+                  <td>{{ result.insertedRows || 0 }}</td>
+                  <td>{{ result.updatedRows || 0 }}</td>
+                  <td>{{ result.deletedRows || 0 }}</td>
+                  <td>{{ result.executionTime }}ms</td>
+                  <td>
+                    <v-chip
+                      :color="result.status === 'SUCCESS' ? 'success' : result.status === 'FAILED' ? 'error' : 'grey'"
+                      size="small"
+                    >
+                      {{ result.status }}
+                    </v-chip>
+                    <div v-if="result.errorMessage" class="text-caption text-error mt-1">
+                      {{ result.errorMessage }}
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </v-table>
+          </div>
+
+          <!-- 生成的 SQL（dryRun 模式） -->
+          <div v-if="syncResult?.generatedSqls && syncResult.generatedSqls.length > 0" class="mt-6">
+            <div class="text-subtitle-1 mb-3">生成的 SQL 语句</div>
+            <v-card variant="outlined">
+              <v-card-text>
+                <pre class="sql-preview">{{ syncResult.generatedSqls.join('\n\n') }}</pre>
+              </v-card-text>
+            </v-card>
+            <v-btn
+              color="primary"
+              variant="text"
+              class="mt-2"
+              @click="copySqlToClipboard"
+            >
+              <v-icon start>mdi-content-copy</v-icon>
+              复制 SQL
+            </v-btn>
+          </div>
+        </v-card-text>
+
+        <v-divider></v-divider>
+
+        <v-card-actions>
+          <v-spacer></v-spacer>
+          <v-btn color="primary" variant="text" @click="showSyncResultDialog = false">
+            关闭
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
     <!-- 消息提示 -->
     <v-snackbar
       v-model="snackbar.show"
@@ -652,6 +901,22 @@ const detailDialog = ref({
   tableName: '',
   data: null,
   filterType: 'ALL'
+})
+
+// 同步相关
+const showSyncDialog = ref(false)
+const showSyncResultDialog = ref(false)
+const syncing = ref(false)
+const syncResult = ref(null)
+
+// 同步选项
+const syncOptions = ref({
+  executeInsert: true,
+  executeUpdate: true,
+  executeDelete: false,
+  batchSize: 1000,
+  useTransaction: true,
+  dryRun: false
 })
 
 // 表头
@@ -992,6 +1257,111 @@ const copyToClipboard = async (text) => {
   }
 }
 
+// 是否有数据需要同步
+const hasDataToSync = computed(() => {
+  if (!diffResult.value?.tableDiffs) return false
+
+  return diffResult.value.tableDiffs.some(table =>
+    (table.insertCount > 0 || table.updateCount > 0 || table.deleteCount > 0)
+  )
+})
+
+// 计算总的新增数量
+const totalInsertCount = computed(() => {
+  if (!diffResult.value?.tableDiffs) return 0
+
+  return diffResult.value.tableDiffs.reduce((sum, table) =>
+    sum + (table.insertCount || 0), 0
+  )
+})
+
+// 计算总的更新数量
+const totalUpdateCount = computed(() => {
+  if (!diffResult.value?.tableDiffs) return 0
+
+  return diffResult.value.tableDiffs.reduce((sum, table) =>
+    sum + (table.updateCount || 0), 0
+  )
+})
+
+// 计算总的删除数量
+const totalDeleteCount = computed(() => {
+  if (!diffResult.value?.tableDiffs) return 0
+
+  return diffResult.value.tableDiffs.reduce((sum, table) =>
+    sum + (table.deleteCount || 0), 0
+  )
+})
+
+// 计算总的同步数量
+const totalSyncCount = computed(() => {
+  let count = 0
+  if (syncOptions.value.executeInsert) count += totalInsertCount.value
+  if (syncOptions.value.executeUpdate) count += totalUpdateCount.value
+  if (syncOptions.value.executeDelete) count += totalDeleteCount.value
+  return count
+})
+
+// 是否可以同步
+const canSync = computed(() => {
+  return (syncOptions.value.executeInsert ||
+          syncOptions.value.executeUpdate ||
+          syncOptions.value.executeDelete) &&
+         totalSyncCount.value > 0
+})
+
+// 执行数据同步
+const executeSyncData = async () => {
+  if (!canSync.value) return
+
+  syncing.value = true
+
+  try {
+    const request = {
+      sourceConnectionId: sourceConnectionId.value,
+      targetConnectionId: targetConnectionId.value,
+      tableNames: selectedTables.value,
+      options: syncOptions.value
+    }
+
+    console.log('发送同步请求:', request)
+
+    const result = await api.data.sync(request)
+
+    console.log('同步结果:', result)
+
+    syncResult.value = result
+    showSyncDialog.value = false
+    showSyncResultDialog.value = true
+
+    if (result.status === 'COMPLETED') {
+      showMessage('数据同步完成', 'success')
+
+      // 重新比对数据
+      if (!syncOptions.value.dryRun) {
+        await startCompare()
+      }
+    } else {
+      showMessage('数据同步失败: ' + result.errorMessage, 'error')
+    }
+
+  } catch (error) {
+    console.error('数据同步失败:', error)
+    const errorMsg = error.response?.data?.message || error.message
+    showMessage('数据同步失败: ' + errorMsg, 'error')
+  } finally {
+    syncing.value = false
+  }
+}
+
+// 复制 SQL 到剪贴板
+const copySqlToClipboard = async () => {
+  if (!syncResult.value?.generatedSqls) return
+
+  const sql = syncResult.value.generatedSqls.join('\n\n')
+  await copyToClipboard(sql)
+}
+
 onMounted(() => {
   loadConnections()
 })
@@ -1070,6 +1440,20 @@ onMounted(() => {
 
 .bg-red-lighten-5 {
   background-color: #ffebee !important;
+}
+
+/* SQL 预览 */
+.sql-preview {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  max-height: 400px;
+  overflow-y: auto;
+  background-color: #f5f5f5;
+  padding: 16px;
+  border-radius: 4px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
 }
 
 /* 响应式 */

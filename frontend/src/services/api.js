@@ -57,6 +57,7 @@ export default {
 
   // Data APIs
   data: {
-    compare: (data) => api.post('/data/compare', data)
+    compare: (data) => api.post('/data/compare', data),
+    sync: (data) => api.post('/data/sync', data)
   }
 }

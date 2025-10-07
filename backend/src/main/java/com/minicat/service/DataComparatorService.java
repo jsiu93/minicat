@@ -341,17 +341,37 @@ public class DataComparatorService {
             Map<String, Object> row2,
             DataCompareRequest.CompareOptions options) {
 
-        // 检查列数是否相同
-        if (row1.size() != row2.size()) {
-            return false;
-        }
+        // 获取两边的所有列名
+        Set<String> allColumns = new HashSet<>();
+        allColumns.addAll(row1.keySet());
+        allColumns.addAll(row2.keySet());
 
         // 比对每一列
-        for (String columnName : row1.keySet()) {
+        for (String columnName : allColumns) {
             Object value1 = row1.get(columnName);
             Object value2 = row2.get(columnName);
 
+            // 如果某一边没有这个字段，检查另一边的值是否为 null
+            // 如果不为 null，则认为不相等
+            if (!row1.containsKey(columnName)) {
+                if (value2 != null) {
+                    log.debug("列 {} 只在目标库存在，且值不为 null: {}", columnName, value2);
+                    return false;
+                }
+                continue;
+            }
+
+            if (!row2.containsKey(columnName)) {
+                if (value1 != null) {
+                    log.debug("列 {} 只在源库存在，且值不为 null: {}", columnName, value1);
+                    return false;
+                }
+                continue;
+            }
+
+            // 两边都有这个字段，比较值
             if (!valuesEqual(value1, value2, options)) {
+                log.debug("列 {} 的值不相等: {} vs {}", columnName, value1, value2);
                 return false;
             }
         }
@@ -396,8 +416,33 @@ public class DataComparatorService {
             return str1.equals(str2);
         }
 
+        // 数字类型比对（处理不同数字类型的比较）
+        if (value1 instanceof Number && value2 instanceof Number) {
+            Number num1 = (Number) value1;
+            Number num2 = (Number) value2;
+
+            // 如果都是整数类型，比较 long 值
+            if (isIntegerType(num1) && isIntegerType(num2)) {
+                return num1.longValue() == num2.longValue();
+            }
+
+            // 如果有浮点数，比较 double 值
+            return Math.abs(num1.doubleValue() - num2.doubleValue()) < 0.0000001;
+        }
+
         // 其他类型直接比对
         return value1.equals(value2);
+    }
+
+    /**
+     * 判断是否为整数类型
+     */
+    private boolean isIntegerType(Number number) {
+        return number instanceof Byte ||
+               number instanceof Short ||
+               number instanceof Integer ||
+               number instanceof Long ||
+               number instanceof java.math.BigInteger;
     }
 
     /**
