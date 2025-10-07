@@ -53,5 +53,10 @@ export default {
     compare: (data) => api.post('/schema/compare', data),
     generateSyncSql: (data) => api.post('/schema/generate-sync-sql', data),
     executeSync: (data) => api.post('/schema/sync', data)
+  },
+
+  // Data APIs
+  data: {
+    compare: (data) => api.post('/data/compare', data)
   }
 }
