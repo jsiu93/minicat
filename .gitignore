@@ -44,6 +44,9 @@ logs/*
 .env.local
 .env.*.local
 
+# Local Spring Boot configuration
+backend/src/main/resources/application-local.yml
+
 # Test coverage
 coverage/
 *.lcov

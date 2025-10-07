@@ -829,15 +829,24 @@
                 <pre class="sql-preview">{{ syncResult.generatedSqls.join('\n\n') }}</pre>
               </v-card-text>
             </v-card>
-            <v-btn
-              color="primary"
-              variant="text"
-              class="mt-2"
-              @click="copySqlToClipboard"
-            >
-              <v-icon start>mdi-content-copy</v-icon>
-              复制 SQL
-            </v-btn>
+            <div class="mt-2">
+              <v-btn
+                color="primary"
+                variant="text"
+                @click="copySqlToClipboard"
+              >
+                <v-icon start>mdi-content-copy</v-icon>
+                复制 SQL
+              </v-btn>
+              <v-btn
+                color="primary"
+                variant="text"
+                @click="downloadSql"
+              >
+                <v-icon start>mdi-download</v-icon>
+                下载 SQL
+              </v-btn>
+            </div>
           </div>
         </v-card-text>
 
@@ -1360,6 +1369,59 @@ const copySqlToClipboard = async () => {
 
   const sql = syncResult.value.generatedSqls.join('\n\n')
   await copyToClipboard(sql)
+}
+
+// 下载 SQL 文件
+const downloadSql = () => {
+  if (!syncResult.value?.generatedSqls) return
+
+  // 生成 SQL 内容
+  const sql = syncResult.value.generatedSqls.join('\n\n')
+
+  // 添加文件头注释
+  const sourceConn = connections.value.find(c => c.id === sourceConnectionId.value)
+  const targetConn = connections.value.find(c => c.id === targetConnectionId.value)
+
+  const header = `-- 数据同步 SQL 脚本
+-- 生成时间: ${new Date().toLocaleString('zh-CN')}
+-- 源数据库: ${sourceConn?.name || ''} (${sourceConn?.host}:${sourceConn?.port}/${sourceConn?.database})
+-- 目标数据库: ${targetConn?.name || ''} (${targetConn?.host}:${targetConn?.port}/${targetConn?.database})
+-- 表: ${selectedTables.value.join(', ')}
+--
+-- 统计信息:
+--   新增行数: ${syncResult.value.statistics?.insertedRows || 0}
+--   更新行数: ${syncResult.value.statistics?.updatedRows || 0}
+--   删除行数: ${syncResult.value.statistics?.deletedRows || 0}
+--
+-- 注意: 请在执行前仔细检查 SQL 语句！
+-- ============================================================
+
+`
+
+  const content = header + sql
+
+  // 创建 Blob
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+
+  // 创建下载链接
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+
+  // 生成文件名：sync_表名_时间戳.sql
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5)
+  const tableNames = selectedTables.value.join('_')
+  link.download = `sync_${tableNames}_${timestamp}.sql`
+
+  // 触发下载
+  document.body.appendChild(link)
+  link.click()
+
+  // 清理
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+
+  showMessage('SQL 文件已下载', 'success')
 }
 
 onMounted(() => {
