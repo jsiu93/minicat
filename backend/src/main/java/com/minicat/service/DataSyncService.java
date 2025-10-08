@@ -179,8 +179,8 @@ public class DataSyncService {
         List<String> columns = getTableColumns(sourceDs, tableName);
 
         // 重新比对获取完整数据
-        Map<String, Map<String, Object>> sourceData = fetchAllTableData(sourceDs, tableName, primaryKeys);
-        Map<String, Map<String, Object>> targetData = fetchAllTableData(targetDs, tableName, primaryKeys);
+        Map<String, Map<String, Object>> sourceData = fetchAllTableData(sourceDs, tableName, primaryKeys, sourceConn.getType());
+        Map<String, Map<String, Object>> targetData = fetchAllTableData(targetDs, tableName, primaryKeys, targetConn.getType());
 
         // 合并所有主键
         Set<String> allKeys = new HashSet<>();
@@ -258,8 +258,8 @@ public class DataSyncService {
         List<String> columns = getTableColumns(sourceDs, tableName);
 
         // 重新比对获取完整数据
-        Map<String, Map<String, Object>> sourceData = fetchAllTableData(sourceDs, tableName, primaryKeys);
-        Map<String, Map<String, Object>> targetData = fetchAllTableData(targetDs, tableName, primaryKeys);
+        Map<String, Map<String, Object>> sourceData = fetchAllTableData(sourceDs, tableName, primaryKeys, sourceConn.getType());
+        Map<String, Map<String, Object>> targetData = fetchAllTableData(targetDs, tableName, primaryKeys, targetConn.getType());
 
         // 合并所有主键
         Set<String> allKeys = new HashSet<>();
@@ -372,11 +372,14 @@ public class DataSyncService {
     private Map<String, Map<String, Object>> fetchAllTableData(
             DataSource dataSource,
             String tableName,
-            List<String> primaryKeys) throws SQLException {
+            List<String> primaryKeys,
+            String dbType) throws SQLException {
 
         Map<String, Map<String, Object>> data = new LinkedHashMap<>();
 
-        String sql = "SELECT * FROM `" + tableName + "`";
+        // 根据数据库类型使用不同的标识符
+        String quote = "mysql".equals(dbType) ? "`" : "\"";
+        String sql = "SELECT * FROM " + quote + tableName + quote;
 
         try (Connection conn = dataSource.getConnection();
              Statement stmt = conn.createStatement();
@@ -431,14 +434,18 @@ public class DataSyncService {
             String dbType) {
 
         StringBuilder sql = new StringBuilder();
-        sql.append("INSERT INTO `").append(tableName).append("` (");
+
+        // 根据数据库类型使用不同的标识符
+        String quote = "mysql".equals(dbType) ? "`" : "\"";
+
+        sql.append("INSERT INTO ").append(quote).append(tableName).append(quote).append(" (");
 
         // 列名
         for (int i = 0; i < columns.size(); i++) {
             if (i > 0) {
                 sql.append(", ");
             }
-            sql.append("`").append(columns.get(i)).append("`");
+            sql.append(quote).append(columns.get(i)).append(quote);
         }
 
         sql.append(") VALUES (");
@@ -467,7 +474,11 @@ public class DataSyncService {
             String dbType) {
 
         StringBuilder sql = new StringBuilder();
-        sql.append("UPDATE `").append(tableName).append("` SET ");
+
+        // 根据数据库类型使用不同的标识符
+        String quote = "mysql".equals(dbType) ? "`" : "\"";
+
+        sql.append("UPDATE ").append(quote).append(tableName).append(quote).append(" SET ");
 
         // SET 子句
         boolean first = true;
@@ -484,7 +495,7 @@ public class DataSyncService {
             }
             first = false;
 
-            sql.append("`").append(columnName).append("` = ").append(formatValue(entry.getValue()));
+            sql.append(quote).append(columnName).append(quote).append(" = ").append(formatValue(entry.getValue()));
         }
 
         // WHERE 子句
@@ -494,7 +505,7 @@ public class DataSyncService {
                 sql.append(" AND ");
             }
             String pkColumn = primaryKeys.get(i);
-            sql.append("`").append(pkColumn).append("` = ").append(formatValue(row.get(pkColumn)));
+            sql.append(quote).append(pkColumn).append(quote).append(" = ").append(formatValue(row.get(pkColumn)));
         }
 
         sql.append(";");
@@ -512,14 +523,18 @@ public class DataSyncService {
             String dbType) {
 
         StringBuilder sql = new StringBuilder();
-        sql.append("DELETE FROM `").append(tableName).append("` WHERE ");
+
+        // 根据数据库类型使用不同的标识符
+        String quote = "mysql".equals(dbType) ? "`" : "\"";
+
+        sql.append("DELETE FROM ").append(quote).append(tableName).append(quote).append(" WHERE ");
 
         for (int i = 0; i < primaryKeys.size(); i++) {
             if (i > 0) {
                 sql.append(" AND ");
             }
             String pkColumn = primaryKeys.get(i);
-            sql.append("`").append(pkColumn).append("` = ").append(formatValue(row.get(pkColumn)));
+            sql.append(quote).append(pkColumn).append(quote).append(" = ").append(formatValue(row.get(pkColumn)));
         }
 
         sql.append(";");
@@ -538,14 +553,18 @@ public class DataSyncService {
             String dbType) throws SQLException {
 
         StringBuilder sql = new StringBuilder();
-        sql.append("INSERT INTO `").append(tableName).append("` (");
+
+        // 根据数据库类型使用不同的标识符
+        String quote = "mysql".equals(dbType) ? "`" : "\"";
+
+        sql.append("INSERT INTO ").append(quote).append(tableName).append(quote).append(" (");
 
         // 列名
         for (int i = 0; i < columns.size(); i++) {
             if (i > 0) {
                 sql.append(", ");
             }
-            sql.append("`").append(columns.get(i)).append("`");
+            sql.append(quote).append(columns.get(i)).append(quote);
         }
 
         sql.append(") VALUES (");
@@ -582,7 +601,11 @@ public class DataSyncService {
             String dbType) throws SQLException {
 
         StringBuilder sql = new StringBuilder();
-        sql.append("UPDATE `").append(tableName).append("` SET ");
+
+        // 根据数据库类型使用不同的标识符
+        String quote = "mysql".equals(dbType) ? "`" : "\"";
+
+        sql.append("UPDATE ").append(quote).append(tableName).append(quote).append(" SET ");
 
         // SET 子句
         List<String> updateColumns = new ArrayList<>();
@@ -598,7 +621,7 @@ public class DataSyncService {
             }
             first = false;
 
-            sql.append("`").append(columnName).append("` = ?");
+            sql.append(quote).append(columnName).append(quote).append(" = ?");
             updateColumns.add(columnName);
         }
 
@@ -608,7 +631,7 @@ public class DataSyncService {
             if (i > 0) {
                 sql.append(" AND ");
             }
-            sql.append("`").append(primaryKeys.get(i)).append("` = ?");
+            sql.append(quote).append(primaryKeys.get(i)).append(quote).append(" = ?");
         }
 
         try (PreparedStatement pstmt = connection.prepareStatement(sql.toString())) {
@@ -639,13 +662,17 @@ public class DataSyncService {
             String dbType) throws SQLException {
 
         StringBuilder sql = new StringBuilder();
-        sql.append("DELETE FROM `").append(tableName).append("` WHERE ");
+
+        // 根据数据库类型使用不同的标识符
+        String quote = "mysql".equals(dbType) ? "`" : "\"";
+
+        sql.append("DELETE FROM ").append(quote).append(tableName).append(quote).append(" WHERE ");
 
         for (int i = 0; i < primaryKeys.size(); i++) {
             if (i > 0) {
                 sql.append(" AND ");
             }
-            sql.append("`").append(primaryKeys.get(i)).append("` = ?");
+            sql.append(quote).append(primaryKeys.get(i)).append(quote).append(" = ?");
         }
 
         try (PreparedStatement pstmt = connection.prepareStatement(sql.toString())) {

@@ -414,12 +414,19 @@ public class SchemaComparatorService {
             return "UNKNOWN";
         }
 
+        String upperDataType = dataType.toUpperCase();
+
+        // PostgreSQL 的 text 类型不允许有长度修饰符
+        if ("TEXT".equals(upperDataType)) {
+            return dataType;
+        }
+
         // 对于需要长度的类型，添加长度信息
-        if (dataType.toUpperCase().matches(".*CHAR.*|.*TEXT.*|.*BINARY.*")) {
+        if (upperDataType.matches(".*CHAR.*|.*BINARY.*")) {
             if (columnSize > 0) {
                 return dataType + "(" + columnSize + ")";
             }
-        } else if (dataType.toUpperCase().matches("DECIMAL|NUMERIC")) {
+        } else if (upperDataType.matches("DECIMAL|NUMERIC")) {
             if (columnSize > 0) {
                 if (decimalDigits > 0) {
                     return dataType + "(" + columnSize + "," + decimalDigits + ")";
@@ -564,9 +571,10 @@ public class SchemaComparatorService {
                 catalog = connection.getDatabase();
             }
 
-            // PostgreSQL 需要指定 schema
+            // PostgreSQL 需要指定 schema（默认 public）
             if ("postgresql".equals(connection.getType())) {
-                schema = connection.getDatabase();
+                schema = connection.getOptions() != null ?
+                        (String) connection.getOptions().get("schema") : "public";
             }
 
             log.info("获取表 {} 的主键信息: catalog={}, schema={}", tableName, catalog, schema);

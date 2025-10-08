@@ -149,8 +149,8 @@ public class DataComparatorService {
         builder.primaryKeys(primaryKeys);
         
         // 统计行数
-        long sourceRowCount = countRows(sourceDs, tableName);
-        long targetRowCount = countRows(targetDs, tableName);
+        long sourceRowCount = countRows(sourceDs, tableName, sourceConn.getType());
+        long targetRowCount = countRows(targetDs, tableName, targetConn.getType());
         
         builder.sourceRowCount(sourceRowCount);
         builder.targetRowCount(targetRowCount);
@@ -194,10 +194,10 @@ public class DataComparatorService {
         DataDiffCounts counts = new DataDiffCounts();
         
         // 获取源表所有数据（按主键排序）
-        Map<String, Map<String, Object>> sourceData = fetchTableData(sourceDs, tableName, primaryKeys, options);
-        
+        Map<String, Map<String, Object>> sourceData = fetchTableData(sourceDs, tableName, primaryKeys, sourceConn.getType(), options);
+
         // 获取目标表所有数据（按主键排序）
-        Map<String, Map<String, Object>> targetData = fetchTableData(targetDs, tableName, primaryKeys, options);
+        Map<String, Map<String, Object>> targetData = fetchTableData(targetDs, tableName, primaryKeys, targetConn.getType(), options);
         
         log.info("表 {} 数据加载完成: 源={} 行, 目标={} 行", tableName, sourceData.size(), targetData.size());
         
@@ -256,11 +256,12 @@ public class DataComparatorService {
             DataSource dataSource,
             String tableName,
             List<String> primaryKeys,
+            String dbType,
             DataCompareRequest.CompareOptions options) throws SQLException {
-        
+
         Map<String, Map<String, Object>> data = new LinkedHashMap<>();
-        
-        String sql = buildSelectSql(tableName, primaryKeys);
+
+        String sql = buildSelectSql(tableName, primaryKeys, dbType);
         
         try (Connection conn = dataSource.getConnection();
              Statement stmt = conn.createStatement();
@@ -302,15 +303,19 @@ public class DataComparatorService {
     /**
      * 构建 SELECT SQL
      */
-    private String buildSelectSql(String tableName, List<String> primaryKeys) {
+    private String buildSelectSql(String tableName, List<String> primaryKeys, String dbType) {
         StringBuilder sql = new StringBuilder();
-        sql.append("SELECT * FROM `").append(tableName).append("` ORDER BY ");
+
+        // 根据数据库类型使用不同的标识符
+        String quote = "mysql".equals(dbType) ? "`" : "\"";
+
+        sql.append("SELECT * FROM ").append(quote).append(tableName).append(quote).append(" ORDER BY ");
 
         for (int i = 0; i < primaryKeys.size(); i++) {
             if (i > 0) {
                 sql.append(", ");
             }
-            sql.append("`").append(primaryKeys.get(i)).append("`");
+            sql.append(quote).append(primaryKeys.get(i)).append(quote);
         }
 
         return sql.toString();
@@ -521,8 +526,10 @@ public class DataComparatorService {
     /**
      * 统计表行数
      */
-    private long countRows(DataSource dataSource, String tableName) throws SQLException {
-        String sql = "SELECT COUNT(*) FROM `" + tableName + "`";
+    private long countRows(DataSource dataSource, String tableName, String dbType) throws SQLException {
+        // 根据数据库类型使用不同的标识符
+        String quote = "mysql".equals(dbType) ? "`" : "\"";
+        String sql = "SELECT COUNT(*) FROM " + quote + tableName + quote;
 
         try (Connection conn = dataSource.getConnection();
              Statement stmt = conn.createStatement();
@@ -557,7 +564,8 @@ public class DataComparatorService {
             }
 
             if ("postgresql".equals(connection.getType())) {
-                schema = connection.getDatabase();
+                schema = connection.getOptions() != null ?
+                        (String) connection.getOptions().get("schema") : "public";
             }
 
             try (ResultSet rs = metaData.getPrimaryKeys(catalog, schema, tableName)) {

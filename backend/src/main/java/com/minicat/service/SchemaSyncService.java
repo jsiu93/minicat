@@ -87,9 +87,9 @@ public class SchemaSyncService {
             int failCount = 0;
             List<String> errors = new ArrayList<>();
             
-            // 执行每条 SQL
+            // 执行每条 SQL（不使用事务，每条 SQL 单独提交）
             try (Connection conn = dataSource.getConnection()) {
-                conn.setAutoCommit(false); // 开启事务
+                conn.setAutoCommit(true); // 自动提交，避免 PostgreSQL 事务中止问题
                 
                 try (Statement stmt = conn.createStatement()) {
                     for (int i = 0; i < sqlStatements.size(); i++) {
@@ -110,30 +110,29 @@ public class SchemaSyncService {
                             
                         } catch (Exception e) {
                             failCount++;
-                            String error = String.format("SQL [%d] 执行失败: %s - %s", 
+                            String error = String.format("SQL [%d] 执行失败: %s - %s",
                                 i + 1, sql, e.getMessage());
                             errors.add(error);
                             log.error(error, e);
+                            // 继续执行下一条 SQL（不中断）
                         }
                     }
-                    
-                    // 如果有失败，回滚事务
+
+                    // 根据执行结果更新任务状态
                     if (failCount > 0) {
-                        conn.rollback();
-                        log.warn("存在失败的 SQL，事务已回滚");
-                        
+                        log.warn("部分 SQL 执行失败: 成功 {} 条，失败 {} 条", successCount, failCount);
+
                         taskService.failTask(
-                            task.getId(), 
-                            String.format("同步失败: 成功 %d 条，失败 %d 条。错误: %s", 
+                            task.getId(),
+                            String.format("同步部分失败: 成功 %d 条，失败 %d 条。错误: %s",
                                 successCount, failCount, String.join("; ", errors))
                         );
                     } else {
-                        conn.commit();
-                        log.info("所有 SQL 执行成功，事务已提交");
-                        
+                        log.info("所有 SQL 执行成功");
+
                         taskService.updateTaskProgress(
-                            task.getId(), 
-                            100, 
+                            task.getId(),
+                            100,
                             String.format("同步完成: 成功执行 %d 条 SQL", successCount)
                         );
                     }
@@ -176,12 +175,21 @@ public class SchemaSyncService {
 
         // 添加列定义
         List<String> columnDefs = new ArrayList<>();
+        List<ColumnDiff.ColumnInfo> columnsWithComments = new ArrayList<>();
 
         for (ColumnDiff columnDiff : tableDiff.getColumnDiffs()) {
             if ("ADD".equals(columnDiff.getDiffType()) && columnDiff.getSourceColumn() != null) {
                 ColumnDiff.ColumnInfo column = columnDiff.getSourceColumn();
                 String columnDef = buildColumnDefinition(column, dbType);
                 columnDefs.add("  " + columnDef);
+
+                // 收集有注释的列（PostgreSQL 需要单独的 COMMENT ON 语句）
+                if ("postgresql".equals(dbType) &&
+                    column.getComment() != null &&
+                    !column.getComment().isEmpty() &&
+                    !"NULL".equals(column.getComment())) {
+                    columnsWithComments.add(column);
+                }
             }
         }
 
@@ -215,6 +223,20 @@ public class SchemaSyncService {
         sql.append(";");
 
         sqls.add(sql.toString());
+
+        // PostgreSQL：添加列注释
+        if ("postgresql".equals(dbType) && !columnsWithComments.isEmpty()) {
+            for (ColumnDiff.ColumnInfo column : columnsWithComments) {
+                String commentSql = String.format(
+                    "COMMENT ON COLUMN \"%s\".\"%s\" IS '%s';",
+                    tableName,
+                    column.getName(),
+                    column.getComment().replace("'", "''")
+                );
+                sqls.add(commentSql);
+            }
+        }
+
         return sqls;
     }
 
@@ -235,35 +257,67 @@ public class SchemaSyncService {
 
         def.append(" ");
 
-        // 数据类型
-        def.append(column.getDataType());
+        // PostgreSQL 特殊处理：检查是否是序列自增列
+        boolean isPostgresSerial = false;
+        if ("postgresql".equals(dbType)) {
+            String defaultValue = column.getDefaultValue();
+            if (defaultValue != null && defaultValue.contains("nextval(")) {
+                // 这是一个使用序列的自增列
+                isPostgresSerial = true;
+
+                // 将类型转换为 SERIAL
+                String dataType = column.getDataType();
+                if (dataType != null) {
+                    if (dataType.toLowerCase().contains("bigint")) {
+                        def.append("BIGSERIAL");
+                    } else if (dataType.toLowerCase().contains("smallint")) {
+                        def.append("SMALLSERIAL");
+                    } else {
+                        def.append("SERIAL");
+                    }
+                } else {
+                    def.append("SERIAL");
+                }
+            } else {
+                // 普通列，使用原始数据类型
+                def.append(column.getDataType());
+            }
+        } else {
+            // 其他数据库，直接使用数据类型
+            def.append(column.getDataType());
+        }
 
         // 可空性
         if (Boolean.FALSE.equals(column.getNullable())) {
             def.append(" NOT NULL");
         } else {
-            def.append(" NULL");
-        }
-
-        // 默认值
-        if (column.getDefaultValue() != null && !column.getDefaultValue().isEmpty()) {
-            def.append(" DEFAULT ").append(column.getDefaultValue());
-        }
-
-        // 自增
-        if (Boolean.TRUE.equals(column.getAutoIncrement())) {
-            if ("mysql".equals(dbType)) {
-                def.append(" AUTO_INCREMENT");
-            } else if ("postgresql".equals(dbType)) {
-                // PostgreSQL 的自增在类型中处理（SERIAL）
-                // 这里不需要额外处理
+            // PostgreSQL 的 SERIAL 类型默认 NOT NULL，不需要显式指定 NULL
+            if (!isPostgresSerial) {
+                def.append(" NULL");
             }
         }
 
-        // 注释
-        if (column.getComment() != null && !column.getComment().isEmpty()) {
+        // 默认值（PostgreSQL 的 SERIAL 类型不需要显式指定默认值）
+        if (!isPostgresSerial &&
+            column.getDefaultValue() != null &&
+            !column.getDefaultValue().isEmpty()) {
+            def.append(" DEFAULT ").append(column.getDefaultValue());
+        }
+
+        // 自增（MySQL）
+        if (Boolean.TRUE.equals(column.getAutoIncrement())) {
             if ("mysql".equals(dbType)) {
-                def.append(" COMMENT '").append(column.getComment()).append("'");
+                def.append(" AUTO_INCREMENT");
+            }
+            // PostgreSQL 的自增已经通过 SERIAL 类型处理
+        }
+
+        // 注释（MySQL）
+        if (column.getComment() != null &&
+            !column.getComment().isEmpty() &&
+            !"NULL".equals(column.getComment())) {
+            if ("mysql".equals(dbType)) {
+                def.append(" COMMENT '").append(column.getComment().replace("'", "''")).append("'");
             }
             // PostgreSQL 的注释需要单独的 COMMENT ON 语句
         }
