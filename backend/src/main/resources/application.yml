@@ -4,7 +4,7 @@ spring:
   
   # SQLite configuration for task storage
   datasource:
-    url: jdbc:sqlite:/Users/joshuasiu/learning/minicat/data/tasks.db
+    url: jdbc:sqlite:./data/tasks.db
     driver-class-name: org.sqlite.JDBC
     
   jpa:
