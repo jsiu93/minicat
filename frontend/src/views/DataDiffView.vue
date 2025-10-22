@@ -339,34 +339,119 @@
           class="elevation-1 mt-4"
         >
           <template v-slot:item.tableName="{ item }">
-            <v-icon class="mr-2">mdi-table</v-icon>
-            {{ item.tableName }}
+            <div class="d-flex align-center">
+              <v-icon class="mr-2" :color="item.insertCount > 0 || item.updateCount > 0 || item.deleteCount > 0 ? 'warning' : 'success'">
+                mdi-table
+              </v-icon>
+              <span class="font-weight-medium">{{ item.tableName }}</span>
+            </div>
           </template>
 
           <template v-slot:item.status="{ item }">
-            <v-chip :color="getStatusColor(item.status)" size="small">
+            <v-chip :color="getStatusColor(item.status)" size="small" variant="flat">
               {{ getStatusText(item.status) }}
             </v-chip>
           </template>
 
+          <template v-slot:item.insertCount="{ item }">
+            <v-chip
+              v-if="item.insertCount > 0"
+              color="primary"
+              size="small"
+              variant="tonal"
+            >
+              <v-icon start size="x-small">mdi-plus</v-icon>
+              {{ item.insertCount }}
+            </v-chip>
+            <span v-else class="text-grey">-</span>
+          </template>
+
+          <template v-slot:item.updateCount="{ item }">
+            <v-chip
+              v-if="item.updateCount > 0"
+              color="warning"
+              size="small"
+              variant="tonal"
+            >
+              <v-icon start size="x-small">mdi-pencil</v-icon>
+              {{ item.updateCount }}
+            </v-chip>
+            <span v-else class="text-grey">-</span>
+          </template>
+
+          <template v-slot:item.deleteCount="{ item }">
+            <v-chip
+              v-if="item.deleteCount > 0"
+              color="error"
+              size="small"
+              variant="tonal"
+            >
+              <v-icon start size="x-small">mdi-minus</v-icon>
+              {{ item.deleteCount }}
+            </v-chip>
+            <span v-else class="text-grey">-</span>
+          </template>
+
+          <template v-slot:item.identicalCount="{ item }">
+            <v-chip
+              v-if="item.identicalCount > 0"
+              color="success"
+              size="small"
+              variant="text"
+            >
+              {{ item.identicalCount }}
+            </v-chip>
+            <span v-else class="text-grey">-</span>
+          </template>
+
           <template v-slot:item.hasDiff="{ item }">
-            <v-icon v-if="item.insertCount > 0 || item.updateCount > 0 || item.deleteCount > 0" color="warning">
-              mdi-alert-circle
-            </v-icon>
-            <v-icon v-else color="success">
-              mdi-check-circle
-            </v-icon>
+            <v-tooltip :text="getDiffSummary(item)">
+              <template v-slot:activator="{ props }">
+                <v-icon
+                  v-bind="props"
+                  v-if="item.insertCount > 0 || item.updateCount > 0 || item.deleteCount > 0"
+                  color="warning"
+                  size="large"
+                >
+                  mdi-alert-circle
+                </v-icon>
+                <v-icon
+                  v-bind="props"
+                  v-else
+                  color="success"
+                  size="large"
+                >
+                  mdi-check-circle
+                </v-icon>
+              </template>
+            </v-tooltip>
           </template>
 
           <template v-slot:item.actions="{ item }">
-            <v-btn
-              v-if="item.sampleDiffs && item.sampleDiffs.length > 0"
-              icon
-              size="small"
-              @click="showTableDetail(item)"
-            >
-              <v-icon>mdi-eye</v-icon>
-            </v-btn>
+            <v-tooltip :text="getActionTooltip(item)">
+              <template v-slot:activator="{ props }">
+                <v-btn
+                  v-bind="props"
+                  v-if="hasDetailToShow(item)"
+                  icon
+                  size="small"
+                  variant="tonal"
+                  color="primary"
+                  @click="showTableDetail(item)"
+                >
+                  <v-icon>mdi-eye</v-icon>
+                </v-btn>
+                <v-chip
+                  v-else
+                  v-bind="props"
+                  size="small"
+                  color="grey"
+                  variant="text"
+                >
+                  无样本
+                </v-chip>
+              </template>
+            </v-tooltip>
           </template>
         </v-data-table>
       </v-card-text>
@@ -434,45 +519,80 @@
             </v-chip>
           </v-alert>
 
-          <!-- 差异类型筛选 -->
+          <!-- 差异类型筛选和显示选项 -->
           <v-row class="mb-4">
-            <v-col cols="12">
+            <v-col cols="12" md="8">
+              <div class="text-subtitle-2 mb-2">筛选差异类型</div>
               <v-chip-group v-model="detailDialog.filterType" mandatory>
-                <v-chip value="ALL" color="grey">
-                  全部 ({{ detailDialog.data?.sampleDiffs?.length || 0 }})
+                <v-chip value="ALL" color="grey" variant="flat">
+                  <v-icon start size="small">mdi-format-list-bulleted</v-icon>
+                  全部 ({{ countDiffType('ALL') }})
                 </v-chip>
-                <v-chip value="INSERT" color="primary">
+                <v-chip value="INSERT" color="primary" variant="flat">
+                  <v-icon start size="small">mdi-plus-circle</v-icon>
                   新增 ({{ countDiffType('INSERT') }})
                 </v-chip>
-                <v-chip value="UPDATE" color="warning">
+                <v-chip value="UPDATE" color="warning" variant="flat">
+                  <v-icon start size="small">mdi-pencil-circle</v-icon>
                   更新 ({{ countDiffType('UPDATE') }})
                 </v-chip>
-                <v-chip value="DELETE" color="error">
+                <v-chip value="DELETE" color="error" variant="flat">
+                  <v-icon start size="small">mdi-delete-circle</v-icon>
                   删除 ({{ countDiffType('DELETE') }})
                 </v-chip>
               </v-chip-group>
             </v-col>
+            <v-col cols="12" md="4" class="d-flex align-center justify-end">
+              <v-switch
+                v-model="globalShowOnlyDiff"
+                label="只显示差异字段"
+                color="warning"
+                density="compact"
+                hide-details
+                @update:model-value="updateAllDiffViewOptions"
+              >
+                <template v-slot:prepend>
+                  <v-icon>mdi-filter-variant</v-icon>
+                </template>
+              </v-switch>
+            </v-col>
           </v-row>
 
-          <!-- 差异列表 - 卡片形式（横向布局） -->
+          <!-- 差异列表 - 改进的详细视图 -->
           <div class="diff-list">
             <v-card
               v-for="(diff, index) in filteredDiffs"
               :key="index"
-              :class="['diff-card', 'mb-4', getRowClass(diff.diffType)]"
+              :class="['diff-card', 'mb-4']"
               variant="outlined"
+              :color="getDiffTypeColor(diff.diffType)"
             >
               <!-- 卡片头部 -->
-              <v-card-title class="d-flex align-center pa-3">
+              <v-card-title :class="['d-flex align-center pa-3', getDiffHeaderClass(diff.diffType)]">
                 <v-chip
                   :color="getDiffTypeColor(diff.diffType)"
                   size="small"
                   class="mr-2"
+                  variant="elevated"
                 >
+                  <v-icon start size="small">{{ getDiffTypeIcon(diff.diffType) }}</v-icon>
                   {{ getDiffTypeText(diff.diffType) }}
                 </v-chip>
-                <span class="text-subtitle-2">主键: {{ diff.primaryKeyValue }}</span>
+                <span class="text-subtitle-1 font-weight-bold">主键: {{ diff.primaryKeyValue }}</span>
                 <v-spacer></v-spacer>
+                <v-tooltip text="只显示差异字段">
+                  <template v-slot:activator="{ props }">
+                    <v-btn
+                      v-bind="props"
+                      icon
+                      size="small"
+                      variant="text"
+                      @click="toggleShowOnlyDiff(index)"
+                    >
+                      <v-icon>{{ diffViewOptions[index]?.showOnlyDiff ? 'mdi-eye-off' : 'mdi-eye' }}</v-icon>
+                    </v-btn>
+                  </template>
+                </v-tooltip>
                 <v-tooltip text="复制主键值">
                   <template v-slot:activator="{ props }">
                     <v-btn
@@ -490,119 +610,212 @@
 
               <v-divider></v-divider>
 
-              <!-- 卡片内容 - 横向对比 -->
+              <!-- 卡片内容 - 左右对比布局 -->
               <v-card-text class="pa-0">
-                <v-row no-gutters>
-                  <!-- 源库数据 -->
-                  <v-col cols="12" md="6" class="border-right">
-                    <div class="pa-3">
-                      <div class="text-subtitle-2 mb-2 d-flex align-center">
-                        <v-icon size="small" class="mr-1" color="primary">mdi-database-arrow-right</v-icon>
-                        源库数据
-                      </div>
-                      <div v-if="diff.sourceData" class="data-table-wrapper">
-                        <table class="data-table">
-                          <thead>
-                            <tr>
-                              <th
-                                v-for="field in parseRowData(diff.sourceData)"
-                                :key="field.name"
-                                :class="isFieldDifferent(diff, field.name) ? 'bg-yellow-lighten-4' : ''"
-                              >
-                                <v-icon
-                                  v-if="isFieldDifferent(diff, field.name)"
-                                  size="x-small"
-                                  color="warning"
-                                  class="mr-1"
-                                >
-                                  mdi-alert-circle
-                                </v-icon>
-                                <span class="text-caption font-weight-bold">{{ field.name }}</span>
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            <tr>
-                              <td
-                                v-for="field in parseRowData(diff.sourceData)"
-                                :key="field.name"
-                                :class="isFieldDifferent(diff, field.name) ? 'bg-yellow-lighten-4' : ''"
-                              >
-                                <span class="text-caption">{{ field.value }}</span>
-                              </td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                      <div v-else class="text-center text-grey pa-4">
-                        <v-icon size="large">mdi-minus-circle-outline</v-icon>
-                        <div class="text-caption mt-2">无数据</div>
-                      </div>
-                    </div>
-                  </v-col>
+                <!-- INSERT 类型：左右对比 -->
+                <div v-if="diff.diffType === 'INSERT' && diff.sourceData" class="pa-4">
+                  <v-alert type="info" variant="tonal" density="compact" class="mb-3">
+                    <v-icon start>mdi-plus-circle</v-icon>
+                    此行将被新增到目标库
+                  </v-alert>
 
-                  <!-- 目标库数据 -->
-                  <v-col cols="12" md="6">
-                    <div class="pa-3">
-                      <div class="text-subtitle-2 mb-2 d-flex align-center">
-                        <v-icon size="small" class="mr-1" color="success">mdi-database-arrow-left</v-icon>
-                        目标库数据
+                  <v-row dense>
+                    <v-col cols="6">
+                      <div class="text-caption text-grey mb-2">
+                        <v-icon size="small" class="mr-1">mdi-database</v-icon>源库数据
                       </div>
-                      <div v-if="diff.targetData" class="data-table-wrapper">
-                        <table class="data-table">
-                          <thead>
-                            <tr>
-                              <th
-                                v-for="field in parseRowData(diff.targetData)"
-                                :key="field.name"
-                                :class="isFieldDifferent(diff, field.name) ? 'bg-yellow-lighten-4' : ''"
+                      <v-table density="compact" class="diff-table">
+                        <tbody>
+                          <tr v-for="field in parseRowData(diff.sourceData)" :key="field.name">
+                            <td class="field-name-cell">{{ field.name }}</td>
+                            <td class="field-value-cell new-value">{{ field.value }}</td>
+                          </tr>
+                        </tbody>
+                      </v-table>
+                    </v-col>
+                    <v-col cols="6">
+                      <div class="text-caption text-grey mb-2">
+                        <v-icon size="small" class="mr-1">mdi-database-outline</v-icon>目标库数据
+                      </div>
+                      <div class="empty-placeholder">
+                        <v-icon color="grey-lighten-2">mdi-database-off</v-icon>
+                        <div class="text-caption text-grey">不存在</div>
+                      </div>
+                    </v-col>
+                  </v-row>
+                </div>
+
+                <!-- DELETE 类型：左右对比 -->
+                <div v-else-if="diff.diffType === 'DELETE' && diff.targetData" class="pa-4">
+                  <v-alert type="error" variant="tonal" density="compact" class="mb-3">
+                    <v-icon start>mdi-delete-circle</v-icon>
+                    此行将从目标库删除
+                  </v-alert>
+
+                  <v-row dense>
+                    <v-col cols="6">
+                      <div class="text-caption text-grey mb-2">
+                        <v-icon size="small" class="mr-1">mdi-database</v-icon>源库数据
+                      </div>
+                      <div class="empty-placeholder">
+                        <v-icon color="grey-lighten-2">mdi-database-off</v-icon>
+                        <div class="text-caption text-grey">不存在</div>
+                      </div>
+                    </v-col>
+                    <v-col cols="6">
+                      <div class="text-caption text-grey mb-2">
+                        <v-icon size="small" class="mr-1">mdi-database-outline</v-icon>目标库数据
+                      </div>
+                      <v-table density="compact" class="diff-table">
+                        <tbody>
+                          <tr v-for="field in parseRowData(diff.targetData)" :key="field.name">
+                            <td class="field-name-cell">{{ field.name }}</td>
+                            <td class="field-value-cell old-value">{{ field.value }}</td>
+                          </tr>
+                        </tbody>
+                      </v-table>
+                    </v-col>
+                  </v-row>
+                </div>
+
+                <!-- UPDATE 类型：左右对比 -->
+                <div v-else-if="diff.diffType === 'UPDATE'" class="pa-4">
+                  <v-alert type="warning" variant="tonal" density="compact" class="mb-3 d-flex align-center">
+                    <v-icon start>mdi-pencil-circle</v-icon>
+                    <span>此行存在字段差异，将更新目标库</span>
+                    <v-spacer></v-spacer>
+                    <v-chip size="small" color="warning" variant="flat">
+                      {{ getFieldDiffs(diff).filter(f => f.isDifferent).length }} 个字段不同
+                    </v-chip>
+                    <v-switch
+                      v-if="diffViewOptions[index]"
+                      v-model="diffViewOptions[index].showOnlyDiff"
+                      density="compact"
+                      color="warning"
+                      hide-details
+                      class="ml-4"
+                    >
+                      <template v-slot:label>
+                        <span class="text-caption">只显示差异</span>
+                      </template>
+                    </v-switch>
+                  </v-alert>
+
+                  <v-row dense>
+                    <v-col cols="6">
+                      <div class="text-caption text-grey mb-2">
+                        <v-icon size="small" class="mr-1">mdi-database</v-icon>源库数据
+                      </div>
+                      <v-table density="compact" class="diff-table">
+                        <tbody>
+                          <tr
+                            v-for="field in getFieldDiffs(diff)"
+                            :key="field.name"
+                            v-show="!diffViewOptions[index]?.showOnlyDiff || field.isDifferent"
+                            :class="field.isDifferent ? 'row-different' : 'row-same'"
+                          >
+                            <td class="field-name-cell">
+                              <v-icon
+                                v-if="field.isDifferent"
+                                size="x-small"
+                                color="warning"
+                                class="mr-1"
                               >
-                                <v-icon
-                                  v-if="isFieldDifferent(diff, field.name)"
-                                  size="x-small"
-                                  color="warning"
-                                  class="mr-1"
-                                >
-                                  mdi-alert-circle
-                                </v-icon>
-                                <span class="text-caption font-weight-bold">{{ field.name }}</span>
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            <tr>
-                              <td
-                                v-for="field in parseRowData(diff.targetData)"
-                                :key="field.name"
-                                :class="isFieldDifferent(diff, field.name) ? 'bg-yellow-lighten-4' : ''"
+                                mdi-alert-circle
+                              </v-icon>
+                              {{ field.name }}
+                            </td>
+                            <td class="field-value-cell" :class="field.isDifferent ? 'old-value' : ''">
+                              {{ field.sourceValue }}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </v-table>
+                    </v-col>
+                    <v-col cols="6">
+                      <div class="text-caption text-grey mb-2">
+                        <v-icon size="small" class="mr-1">mdi-database-outline</v-icon>目标库数据
+                      </div>
+                      <v-table density="compact" class="diff-table">
+                        <tbody>
+                          <tr
+                            v-for="field in getFieldDiffs(diff)"
+                            :key="field.name"
+                            v-show="!diffViewOptions[index]?.showOnlyDiff || field.isDifferent"
+                            :class="field.isDifferent ? 'row-different' : 'row-same'"
+                          >
+                            <td class="field-name-cell">
+                              <v-icon
+                                v-if="field.isDifferent"
+                                size="x-small"
+                                color="warning"
+                                class="mr-1"
                               >
-                                <span class="text-caption">{{ field.value }}</span>
-                              </td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                      <div v-else class="text-center text-grey pa-4">
-                        <v-icon size="large">mdi-minus-circle-outline</v-icon>
-                        <div class="text-caption mt-2">无数据</div>
-                      </div>
-                    </div>
-                  </v-col>
-                </v-row>
+                                mdi-alert-circle
+                              </v-icon>
+                              {{ field.name }}
+                            </td>
+                            <td class="field-value-cell" :class="field.isDifferent ? 'new-value' : ''">
+                              {{ field.targetValue }}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </v-table>
+                    </v-col>
+                  </v-row>
+                </div>
+
+                <!-- 无数据情况 -->
+                <div v-else class="text-center text-grey pa-8">
+                  <v-icon size="64" color="grey-lighten-2">mdi-database-off</v-icon>
+                  <div class="text-body-2 mt-2">无数据</div>
+                </div>
               </v-card-text>
             </v-card>
           </div>
 
           <!-- 无差异提示 -->
           <v-alert v-if="filteredDiffs.length === 0" type="info" variant="tonal" class="mt-4">
-            没有找到 {{ getDiffTypeText(detailDialog.filterType) }} 类型的差异
+            <div class="d-flex align-center">
+              <v-icon class="mr-2">mdi-information</v-icon>
+              <div>
+                <div class="font-weight-bold">没有找到 {{ getDiffTypeText(detailDialog.filterType) }} 类型的差异</div>
+                <div class="text-caption mt-1">
+                  总差异数: {{ countDiffType('ALL') }} |
+                  新增: {{ countDiffType('INSERT') }} |
+                  更新: {{ countDiffType('UPDATE') }} |
+                  删除: {{ countDiffType('DELETE') }}
+                </div>
+              </div>
+            </div>
           </v-alert>
 
           <!-- 样本说明 -->
-          <v-alert type="warning" variant="tonal" class="mt-4">
+          <v-alert v-if="filteredDiffs.length > 0" type="warning" variant="tonal" class="mt-4">
             <v-icon class="mr-2">mdi-information</v-icon>
             注意：这里只显示前 10 条差异样本，实际差异数量请查看统计信息
           </v-alert>
+
+          <!-- 调试信息（开发模式） -->
+          <v-expansion-panels v-if="filteredDiffs.length === 0 && detailDialog.data" class="mt-4">
+            <v-expansion-panel>
+              <v-expansion-panel-title>
+                <v-icon class="mr-2">mdi-bug</v-icon>
+                调试信息
+              </v-expansion-panel-title>
+              <v-expansion-panel-text>
+                <pre class="text-caption">{{ JSON.stringify({
+                  tableName: detailDialog.tableName,
+                  filterType: detailDialog.filterType,
+                  sampleDiffsCount: detailDialog.data?.sampleDiffs?.length || 0,
+                  insertCount: detailDialog.data?.insertCount || 0,
+                  updateCount: detailDialog.data?.updateCount || 0,
+                  deleteCount: detailDialog.data?.deleteCount || 0,
+                  sampleDiffs: detailDialog.data?.sampleDiffs
+                }, null, 2) }}</pre>
+              </v-expansion-panel-text>
+            </v-expansion-panel>
+          </v-expansion-panels>
         </v-card-text>
 
         <v-card-actions>
@@ -912,6 +1125,12 @@ const detailDialog = ref({
   filterType: 'ALL'
 })
 
+// 差异视图选项（每个差异项的显示选项）
+const diffViewOptions = ref({})
+
+// 全局只显示差异字段选项
+const globalShowOnlyDiff = ref(false)
+
 // 同步相关
 const showSyncDialog = ref(false)
 const showSyncResultDialog = ref(false)
@@ -957,19 +1176,36 @@ const canCompare = computed(() => {
          !comparing.value
 })
 
-// 过滤后的差异列表
+// 过滤后的差异列表 - 使用allDiffs获取所有差异
 const filteredDiffs = computed(() => {
-  if (!detailDialog.value.data?.sampleDiffs) {
+  // 优先使用allDiffs(所有差异),如果没有则使用sampleDiffs(样本)
+  const diffs = detailDialog.value.data?.allDiffs || detailDialog.value.data?.sampleDiffs
+
+  if (!diffs || diffs.length === 0) {
+    console.warn('没有差异数据')
     return []
   }
 
+  console.log('过滤差异列表:', {
+    filterType: detailDialog.value.filterType,
+    totalDiffs: diffs.length,
+    useAllDiffs: !!detailDialog.value.data?.allDiffs
+  })
+
   if (detailDialog.value.filterType === 'ALL') {
-    return detailDialog.value.data.sampleDiffs
+    return diffs
   }
 
-  return detailDialog.value.data.sampleDiffs.filter(
+  const filtered = diffs.filter(
     diff => diff.diffType === detailDialog.value.filterType
   )
+
+  console.log('过滤后的差异:', {
+    filterType: detailDialog.value.filterType,
+    filteredCount: filtered.length
+  })
+
+  return filtered
 })
 
 // 加载连接列表
@@ -1054,6 +1290,20 @@ const startCompare = async () => {
     console.log('开始数据比对:', request)
     const response = await api.data.compare(request)
 
+    console.log('比对结果:', response)
+    console.log('表差异列表:', response.tableDiffs)
+
+    // 检查每个表的样本差异
+    response.tableDiffs?.forEach(table => {
+      console.log(`表 ${table.tableName}:`, {
+        insertCount: table.insertCount,
+        updateCount: table.updateCount,
+        deleteCount: table.deleteCount,
+        sampleDiffsCount: table.sampleDiffs?.length || 0,
+        sampleDiffs: table.sampleDiffs
+      })
+    })
+
     diffResult.value = response
     showMessage('数据比对完成', 'success')
   } catch (error) {
@@ -1065,9 +1315,49 @@ const startCompare = async () => {
   }
 }
 
+// 判断是否有详情可显示
+const hasDetailToShow = (item) => {
+  const hasSamples = item.sampleDiffs && item.sampleDiffs.length > 0
+  const hasDiff = item.insertCount > 0 || item.updateCount > 0 || item.deleteCount > 0
+
+  console.log('检查表详情:', {
+    tableName: item.tableName,
+    hasSamples,
+    sampleDiffsLength: item.sampleDiffs?.length || 0,
+    hasDiff,
+    insertCount: item.insertCount,
+    updateCount: item.updateCount,
+    deleteCount: item.deleteCount,
+    sampleDiffs: item.sampleDiffs
+  })
+
+  return hasSamples
+}
+
+// 获取操作提示文本
+const getActionTooltip = (item) => {
+  if (item.sampleDiffs && item.sampleDiffs.length > 0) {
+    return `查看详细差异 (${item.sampleDiffs.length} 条样本)`
+  }
+  return '无差异样本数据'
+}
+
 // 显示表详情
 const showTableDetail = (tableDiff) => {
   console.log('查看表详情:', tableDiff)
+  console.log('样本差异数据:', tableDiff.sampleDiffs)
+
+  // 重置视图选项
+  diffViewOptions.value = {}
+  globalShowOnlyDiff.value = false
+
+  // 初始化每个差异项的视图选项
+  const diffs = tableDiff.allDiffs || tableDiff.sampleDiffs || []
+  diffs.forEach((_, index) => {
+    diffViewOptions.value[index] = {
+      showOnlyDiff: false
+    }
+  })
 
   detailDialog.value = {
     show: true,
@@ -1077,19 +1367,19 @@ const showTableDetail = (tableDiff) => {
   }
 }
 
-// 统计差异类型数量
+// 统计差异类型数量 - 使用allDiffs或sampleDiffs
 const countDiffType = (type) => {
-  if (!detailDialog.value.data?.sampleDiffs) {
+  const diffs = detailDialog.value.data?.allDiffs || detailDialog.value.data?.sampleDiffs
+
+  if (!diffs) {
     return 0
   }
 
   if (type === 'ALL') {
-    return detailDialog.value.data.sampleDiffs.length
+    return diffs.length
   }
 
-  return detailDialog.value.data.sampleDiffs.filter(
-    diff => diff.diffType === type
-  ).length
+  return diffs.filter(diff => diff.diffType === type).length
 }
 
 // 获取差异类型颜色
@@ -1111,6 +1401,53 @@ const getDiffTypeText = (type) => {
     case 'ALL': return '全部'
     default: return '未知'
   }
+}
+
+// 获取差异类型图标
+const getDiffTypeIcon = (type) => {
+  switch (type) {
+    case 'INSERT': return 'mdi-plus-circle'
+    case 'UPDATE': return 'mdi-pencil-circle'
+    case 'DELETE': return 'mdi-delete-circle'
+    default: return 'mdi-help-circle'
+  }
+}
+
+// 获取差异头部样式类
+const getDiffHeaderClass = (type) => {
+  switch (type) {
+    case 'INSERT': return 'bg-blue-lighten-5'
+    case 'UPDATE': return 'bg-orange-lighten-5'
+    case 'DELETE': return 'bg-red-lighten-5'
+    default: return ''
+  }
+}
+
+// 切换只显示差异字段
+const toggleShowOnlyDiff = (index) => {
+  if (!diffViewOptions.value[index]) {
+    diffViewOptions.value[index] = { showOnlyDiff: false }
+  }
+  diffViewOptions.value[index].showOnlyDiff = !diffViewOptions.value[index].showOnlyDiff
+}
+
+// 获取差异摘要
+const getDiffSummary = (item) => {
+  const parts = []
+  if (item.insertCount > 0) parts.push(`新增 ${item.insertCount} 行`)
+  if (item.updateCount > 0) parts.push(`更新 ${item.updateCount} 行`)
+  if (item.deleteCount > 0) parts.push(`删除 ${item.deleteCount} 行`)
+  if (item.identicalCount > 0) parts.push(`相同 ${item.identicalCount} 行`)
+  return parts.length > 0 ? parts.join(', ') : '无差异'
+}
+
+// 更新所有差异视图选项
+const updateAllDiffViewOptions = (value) => {
+  if (!detailDialog.value.data?.sampleDiffs) return
+
+  detailDialog.value.data.sampleDiffs.forEach((_, index) => {
+    diffViewOptions.value[index] = { showOnlyDiff: value }
+  })
 }
 
 // 格式化 JSON
@@ -1439,59 +1776,116 @@ onMounted(() => {
 /* 差异卡片 */
 .diff-card {
   transition: all 0.3s;
+  border-width: 2px !important;
 }
 
 .diff-card:hover {
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+  transform: translateY(-2px);
 }
 
-/* 边框 */
-.border-right {
-  border-right: 1px solid rgba(0, 0, 0, 0.12);
+/* 字段列表 */
+.field-list {
+  background-color: transparent;
 }
 
-/* 数据表格容器 */
-.data-table-wrapper {
-  overflow-x: auto;
-  max-width: 100%;
+.field-item {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  padding: 12px 16px;
+  transition: background-color 0.2s;
 }
 
-/* 数据表格 */
-.data-table {
+.field-item:last-child {
+  border-bottom: none;
+}
+
+.field-item:hover {
+  background-color: rgba(0, 0, 0, 0.02);
+}
+
+/* 字段不同/相同样式 */
+.field-different {
+  background-color: #fff9e6 !important;
+}
+
+.field-different:hover {
+  background-color: #fff3cc !important;
+}
+
+.field-same {
+  opacity: 0.7;
+}
+
+/* 字段对比 */
+.field-comparison {
   width: 100%;
-  border-collapse: collapse;
-  font-size: 12px;
 }
 
-.data-table th,
-.data-table td {
-  padding: 8px 12px;
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  text-align: left;
-  white-space: nowrap;
-  min-width: 80px;
-  max-width: 300px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.field-name-row {
+  display: flex;
+  align-items: center;
 }
 
-.data-table th {
-  background-color: rgba(0, 0, 0, 0.03);
-  font-weight: 600;
-  position: sticky;
-  top: 0;
-  z-index: 1;
+.field-name {
+  font-size: 14px;
+  color: #1976d2;
+  font-family: 'Courier New', monospace;
 }
 
-.data-table td {
-  background-color: white;
+/* 值对比 */
+.value-comparison {
+  position: relative;
+  padding-left: 24px;
+}
+
+.value-row {
+  display: flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+}
+
+.source-row {
+  background-color: #e3f2fd;
+}
+
+.target-row {
+  background-color: #e8f5e9;
+}
+
+.value-text {
+  flex: 1;
+  word-break: break-all;
+}
+
+.old-value {
+  color: #d32f2f;
+  text-decoration: line-through;
+  opacity: 0.8;
+}
+
+.new-value {
+  color: #388e3c;
+  font-weight: 500;
+}
+
+.diff-arrow {
+  position: absolute;
+  left: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.value-same {
+  padding-left: 24px;
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  color: #666;
 }
 
 /* 差异行高亮 */
-.bg-yellow-lighten-4 {
-  background-color: #fff9c4 !important;
-}
-
 .bg-blue-lighten-5 {
   background-color: #e3f2fd !important;
 }
@@ -1518,11 +1912,123 @@ onMounted(() => {
   word-wrap: break-word;
 }
 
+/* 滚动条美化 */
+.diff-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.diff-list::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+.diff-list::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+
+.diff-list::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* 动画效果 */
+@keyframes highlight {
+  0% {
+    background-color: #fff9c4;
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.field-different {
+  animation: highlight 2s ease-in-out;
+}
+
+/* 左右对比表格样式 */
+.diff-table {
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.diff-table tbody tr {
+  transition: background-color 0.2s;
+}
+
+.diff-table tbody tr.row-different {
+  background-color: #fff9e6;
+}
+
+.diff-table tbody tr.row-same {
+  opacity: 0.7;
+}
+
+.diff-table tbody tr:hover {
+  background-color: #f5f5f5;
+}
+
+.field-name-cell {
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  color: #1976d2;
+  font-weight: 500;
+  padding: 8px 12px !important;
+  border-bottom: 1px solid #f0f0f0;
+  width: 35%;
+  white-space: nowrap;
+}
+
+.field-value-cell {
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  padding: 8px 12px !important;
+  border-bottom: 1px solid #f0f0f0;
+  word-break: break-all;
+}
+
+.field-value-cell.old-value {
+  background-color: #ffebee;
+  color: #d32f2f;
+}
+
+.field-value-cell.new-value {
+  background-color: #e8f5e9;
+  color: #388e3c;
+  font-weight: 500;
+}
+
+.empty-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  border: 2px dashed #e0e0e0;
+  border-radius: 4px;
+  background-color: #fafafa;
+  min-height: 200px;
+}
+
 /* 响应式 */
 @media (max-width: 960px) {
-  .border-right {
-    border-right: none;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.12);
+  .value-comparison {
+    padding-left: 12px;
+  }
+
+  .value-row {
+    font-size: 12px;
+    padding: 4px 8px;
+  }
+
+  .field-name {
+    font-size: 13px;
+  }
+
+  .field-name-cell,
+  .field-value-cell {
+    font-size: 12px;
+    padding: 6px 8px !important;
   }
 }
 </style>

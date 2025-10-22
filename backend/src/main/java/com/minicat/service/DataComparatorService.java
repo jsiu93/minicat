@@ -175,7 +175,8 @@ public class DataComparatorService {
         builder.deleteCount(counts.deleteCount);
         builder.identicalCount(counts.identicalCount);
         builder.sampleDiffs(counts.sampleDiffs);
-        
+        builder.allDiffs(counts.allDiffs);
+
         return builder.build();
     }
     
@@ -205,47 +206,70 @@ public class DataComparatorService {
         Set<String> allKeys = new HashSet<>();
         allKeys.addAll(sourceData.keySet());
         allKeys.addAll(targetData.keySet());
-        
-        int sampleCount = 0;
-        int maxSamples = 10; // 最多保存 10 条样本
-        
+
+        // 样本采集策略：确保每种类型都能被采集到
+        int maxSamplesPerType = 5; // 每种类型最多5条样本
+        int insertSampleCount = 0;
+        int updateSampleCount = 0;
+        int deleteSampleCount = 0;
+
         // 比对每一行
         for (String pkValue : allKeys) {
             Map<String, Object> sourceRow = sourceData.get(pkValue);
             Map<String, Object> targetRow = targetData.get(pkValue);
-            
+
             if (sourceRow != null && targetRow != null) {
                 // 两边都有，检查是否相同
                 if (rowsEqual(sourceRow, targetRow, options)) {
                     counts.identicalCount++;
                 } else {
                     counts.updateCount++;
-                    
-                    // 保存样本
-                    if (sampleCount < maxSamples) {
-                        counts.sampleDiffs.add(createRowDiff("UPDATE", pkValue, sourceRow, targetRow));
-                        sampleCount++;
+
+                    TableDataDiff.RowDiff rowDiff = createRowDiff("UPDATE", pkValue, sourceRow, targetRow);
+
+                    // 保存到所有差异列表
+                    counts.allDiffs.add(rowDiff);
+
+                    // 保存UPDATE样本
+                    if (updateSampleCount < maxSamplesPerType) {
+                        counts.sampleDiffs.add(rowDiff);
+                        updateSampleCount++;
                     }
                 }
             } else if (sourceRow != null) {
                 // 只在源库存在
                 counts.insertCount++;
-                
-                if (sampleCount < maxSamples) {
-                    counts.sampleDiffs.add(createRowDiff("INSERT", pkValue, sourceRow, null));
-                    sampleCount++;
+
+                TableDataDiff.RowDiff rowDiff = createRowDiff("INSERT", pkValue, sourceRow, null);
+
+                // 保存到所有差异列表
+                counts.allDiffs.add(rowDiff);
+
+                // 保存INSERT样本
+                if (insertSampleCount < maxSamplesPerType) {
+                    counts.sampleDiffs.add(rowDiff);
+                    insertSampleCount++;
                 }
             } else {
                 // 只在目标库存在
                 counts.deleteCount++;
-                
-                if (sampleCount < maxSamples) {
-                    counts.sampleDiffs.add(createRowDiff("DELETE", pkValue, null, targetRow));
-                    sampleCount++;
+
+                TableDataDiff.RowDiff rowDiff = createRowDiff("DELETE", pkValue, null, targetRow);
+
+                // 保存到所有差异列表
+                counts.allDiffs.add(rowDiff);
+
+                // 保存DELETE样本
+                if (deleteSampleCount < maxSamplesPerType) {
+                    counts.sampleDiffs.add(rowDiff);
+                    deleteSampleCount++;
                 }
             }
         }
-        
+
+        log.info("表 {} 差异统计: INSERT={}, UPDATE={}, DELETE={}, 样本数={}",
+                tableName, counts.insertCount, counts.updateCount, counts.deleteCount, counts.sampleDiffs.size());
+
         return counts;
     }
     
@@ -597,6 +621,7 @@ public class DataComparatorService {
         long deleteCount = 0;
         long identicalCount = 0;
         List<TableDataDiff.RowDiff> sampleDiffs = new ArrayList<>();
+        List<TableDataDiff.RowDiff> allDiffs = new ArrayList<>();
     }
 }
 

@@ -58,10 +58,16 @@ public class TableDataDiff {
     private List<String> primaryKeys;
     
     /**
-     * 差异样本数据（前几条）
+     * 差异样本数据（前几条）- 用于快速预览
      */
     @Builder.Default
     private List<RowDiff> sampleDiffs = new ArrayList<>();
+
+    /**
+     * 所有差异数据 - 生产环境使用
+     */
+    @Builder.Default
+    private List<RowDiff> allDiffs = new ArrayList<>();
     
     /**
      * 比对状态：SUCCESS, FAILED, NO_PRIMARY_KEY
