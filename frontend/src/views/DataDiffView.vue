@@ -90,7 +90,33 @@
                       <v-chip color="primary" size="small" class="mr-2">
                         源库表 ({{ sourceTables.length }})
                       </v-chip>
+                      <v-chip
+                        v-if="targetTableSet.size"
+                        color="success"
+                        size="small"
+                        variant="tonal"
+                        class="mr-2"
+                      >
+                        可同步 {{ validSourceTables.length }}
+                      </v-chip>
+                      <v-chip
+                        v-if="sourceOnlyCount > 0"
+                        color="warning"
+                        size="small"
+                        variant="tonal"
+                        class="mr-2"
+                      >
+                        目标缺失 {{ sourceOnlyCount }}
+                      </v-chip>
                       <v-spacer></v-spacer>
+                      <v-btn
+                        size="small"
+                        variant="text"
+                        icon
+                        @click="refreshSourceTables"
+                      >
+                        <v-icon size="small">mdi-refresh</v-icon>
+                      </v-btn>
                       <v-btn
                         size="small"
                         variant="text"
@@ -106,6 +132,15 @@
                         清空
                       </v-btn>
                     </div>
+                    <v-text-field
+                      v-model="sourceTableSearch"
+                      label="搜索表"
+                      prepend-inner-icon="mdi-magnify"
+                      density="compact"
+                      variant="outlined"
+                      hide-details
+                      class="mb-2"
+                    ></v-text-field>
                     <v-sheet
                       class="pa-2"
                       border
@@ -119,34 +154,85 @@
                         color="primary"
                         class="d-block mx-auto"
                       ></v-progress-circular>
-                      <v-checkbox
-                        v-else
-                        v-for="table in sourceTables"
-                        :key="table"
-                        v-model="selectedTables"
-                        :value="table"
-                        :label="table"
-                        density="compact"
-                        hide-details
-                      ></v-checkbox>
-                      <v-alert
-                        v-if="!loadingSourceTables && sourceTables.length === 0"
-                        type="info"
-                        variant="tonal"
-                        density="compact"
-                      >
-                        未找到表
-                      </v-alert>
+                      <template v-else>
+                        <v-checkbox
+                          v-for="table in filteredSourceTables"
+                          :key="table"
+                          v-model="selectedTables"
+                          :value="table"
+                          density="compact"
+                          hide-details
+                          :disabled="targetTableSet.size && !targetTableSet.has(table)"
+                        >
+                          <template #label>
+                            <div class="d-flex align-center">
+                              <span>{{ table }}</span>
+                              <v-chip
+                                v-if="targetTableSet.size && !targetTableSet.has(table)"
+                                size="x-small"
+                                color="warning"
+                                variant="text"
+                                class="ml-2"
+                              >
+                                目标缺失
+                              </v-chip>
+                            </div>
+                          </template>
+                        </v-checkbox>
+                        <v-alert
+                          v-if="filteredSourceTables.length === 0"
+                          type="info"
+                          variant="tonal"
+                          density="compact"
+                        >
+                          未找到表
+                        </v-alert>
+                      </template>
                     </v-sheet>
+                    <v-alert
+                      v-if="sourceOnlyCount > 0"
+                      type="warning"
+                      variant="tonal"
+                      density="compact"
+                      class="mt-2"
+                    >
+                      有 {{ sourceOnlyCount }} 个源库表在目标库不存在，将被跳过同步
+                    </v-alert>
                   </v-col>
 
                   <!-- 目标库表列表（只读） -->
                   <v-col cols="12" md="6">
                     <div class="d-flex align-center mb-2">
-                      <v-chip color="success" size="small">
+                      <v-chip color="success" size="small" class="mr-2">
                         目标库表 ({{ targetTables.length }})
                       </v-chip>
+                      <v-chip
+                        v-if="targetOnlyCount > 0"
+                        color="warning"
+                        size="small"
+                        variant="tonal"
+                      >
+                        源缺失 {{ targetOnlyCount }}
+                      </v-chip>
+                      <v-spacer></v-spacer>
+                      <v-btn
+                        size="small"
+                        variant="text"
+                        icon
+                        @click="refreshTargetTables"
+                      >
+                        <v-icon size="small">mdi-refresh</v-icon>
+                      </v-btn>
                     </div>
+                    <v-text-field
+                      v-model="targetTableSearch"
+                      label="搜索表"
+                      prepend-inner-icon="mdi-magnify"
+                      density="compact"
+                      variant="outlined"
+                      hide-details
+                      class="mb-2"
+                    ></v-text-field>
                     <v-sheet
                       class="pa-2"
                       border
@@ -160,37 +246,67 @@
                         color="success"
                         class="d-block mx-auto"
                       ></v-progress-circular>
-                      <v-list v-else density="compact">
-                        <v-list-item
-                          v-for="table in targetTables"
-                          :key="table"
-                          :title="table"
+                      <template v-else>
+                        <v-list density="compact">
+                          <v-list-item
+                            v-for="table in filteredTargetTables"
+                            :key="table"
+                            :title="table"
+                          >
+                            <template v-slot:prepend>
+                              <v-icon size="small">mdi-table</v-icon>
+                            </template>
+                            <template v-slot:append>
+                              <v-chip
+                                v-if="!sourceTableSet.has(table)"
+                                size="x-small"
+                                color="warning"
+                                variant="text"
+                              >
+                                源缺失
+                              </v-chip>
+                            </template>
+                          </v-list-item>
+                        </v-list>
+                        <v-alert
+                          v-if="filteredTargetTables.length === 0"
+                          type="info"
+                          variant="tonal"
+                          density="compact"
                         >
-                          <template v-slot:prepend>
-                            <v-icon size="small">mdi-table</v-icon>
-                          </template>
-                        </v-list-item>
-                      </v-list>
-                      <v-alert
-                        v-if="!loadingTargetTables && targetTables.length === 0"
-                        type="info"
-                        variant="tonal"
-                        density="compact"
-                      >
-                        未找到表
-                      </v-alert>
+                          未找到表
+                        </v-alert>
+                      </template>
                     </v-sheet>
+                    <v-alert
+                      v-if="targetOnlyCount > 0"
+                      type="warning"
+                      variant="tonal"
+                      density="compact"
+                      class="mt-2"
+                    >
+                      有 {{ targetOnlyCount }} 个目标库表在源库不存在
+                    </v-alert>
                   </v-col>
                 </v-row>
 
                 <v-alert
-                  v-if="selectedTables.length > 0"
+                  v-if="selectionStats.total > 0"
                   type="success"
                   variant="tonal"
                   density="compact"
                   class="mt-4"
                 >
-                  已选择 {{ selectedTables.length }} 个表进行比对
+                  已选择 {{ selectionStats.total }} 个表，可同步 {{ selectionStats.valid }} 个
+                </v-alert>
+                <v-alert
+                  v-else
+                  type="warning"
+                  variant="tonal"
+                  density="compact"
+                  class="mt-4"
+                >
+                  请至少选择一个表进行比对
                 </v-alert>
               </v-card-text>
             </v-card>
@@ -330,6 +446,27 @@
             </v-card>
           </v-col>
         </v-row>
+
+        <v-alert
+          v-if="latestDiffTaskId"
+          type="info"
+          variant="tonal"
+          density="compact"
+          class="mt-4"
+        >
+          <div class="d-flex align-center">
+            <span>任务 ID: {{ latestDiffTaskId }}</span>
+            <v-spacer></v-spacer>
+            <v-btn
+              size="small"
+              variant="text"
+              color="primary"
+              @click="openTaskCenter(latestDiffTaskId)"
+            >
+              查看任务
+            </v-btn>
+          </div>
+        </v-alert>
 
         <!-- 表差异列表 -->
         <v-data-table
@@ -1034,6 +1171,27 @@
             </v-table>
           </div>
 
+          <v-alert
+            v-if="latestSyncTaskId"
+            type="info"
+            variant="tonal"
+            density="compact"
+            class="mt-4"
+          >
+            <div class="d-flex align-center">
+              <span>任务 ID: {{ latestSyncTaskId }}</span>
+              <v-spacer></v-spacer>
+              <v-btn
+                size="small"
+                variant="text"
+                color="primary"
+                @click="openTaskCenter(latestSyncTaskId)"
+              >
+                查看任务
+              </v-btn>
+            </div>
+          </v-alert>
+
           <!-- 生成的 SQL（dryRun 模式） -->
           <div v-if="syncResult?.generatedSqls && syncResult.generatedSqls.length > 0" class="mt-6">
             <div class="text-subtitle-1 mb-3">生成的 SQL 语句</div>
@@ -1086,68 +1244,140 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
+import { useRouter } from 'vue-router'
+import { storeToRefs } from 'pinia'
 import api from '@/services/api'
+import { useConnectionStore } from '@/store/connections'
+import { useSchemaStore } from '@/store/schema'
 
-// 连接列表
-const connections = ref([])
+const COMPARE_OPTION_KEY = 'minicat-data-compare-options'
+const SYNC_OPTION_KEY = 'minicat-data-sync-options'
 
-// 选中的连接
+const loadPersistedOptions = (key, defaults) => {
+  try {
+    const stored = localStorage.getItem(key)
+    if (!stored) {
+      return { ...defaults }
+    }
+    return { ...defaults, ...JSON.parse(stored) }
+  } catch (error) {
+    return { ...defaults }
+  }
+}
+
+const persistOptions = (key, options) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(options))
+  } catch (error) {
+    console.error('持久化选项失败:', error)
+  }
+}
+
+const filterTables = (tables = [], keyword = '') => {
+  if (!Array.isArray(tables)) {
+    return []
+  }
+  const normalized = keyword?.trim().toLowerCase()
+  if (!normalized) {
+    return tables
+  }
+  return tables.filter(table => table.toLowerCase().includes(normalized))
+}
+
+const buildTablePresence = (source = [], target = []) => {
+  const targetSet = new Set(target || [])
+  const sourceSet = new Set(source || [])
+  const overlap = (source || []).filter(table => targetSet.has(table))
+  const sourceOnly = (source || []).filter(table => !targetSet.has(table))
+  const targetOnly = (target || []).filter(table => !sourceSet.has(table))
+  return { overlap, sourceOnly, targetOnly }
+}
+
+const getErrorMessage = (error) => {
+  return error?.response?.data?.message || error?.message || '未知错误'
+}
+
+const router = useRouter()
+const connectionStore = useConnectionStore()
+const schemaStore = useSchemaStore()
+const { connections } = storeToRefs(connectionStore)
+
 const sourceConnectionId = ref(null)
 const targetConnectionId = ref(null)
-
-// 表列表
-const sourceTables = ref([])
-const targetTables = ref([])
 const selectedTables = ref([])
-
-// 加载状态
-const loadingSourceTables = ref(false)
-const loadingTargetTables = ref(false)
 const comparing = ref(false)
-
-// 比对选项
-const compareOptions = ref({
-  compareContent: true,
-  batchSize: 1000,
-  maxRows: 0,
-  ignoreCase: false
-})
-
-// 比对结果
 const diffResult = ref(null)
-
-// 详细差异对话框
+const latestDiffTaskId = ref('')
 const detailDialog = ref({
   show: false,
   tableName: '',
   data: null,
   filterType: 'ALL'
 })
-
-// 差异视图选项（每个差异项的显示选项）
 const diffViewOptions = ref({})
-
-// 全局只显示差异字段选项
 const globalShowOnlyDiff = ref(false)
-
-// 同步相关
 const showSyncDialog = ref(false)
 const showSyncResultDialog = ref(false)
 const syncing = ref(false)
 const syncResult = ref(null)
-
-// 同步选项
-const syncOptions = ref({
+const latestSyncTaskId = ref('')
+const sourceTableSearch = ref('')
+const targetTableSearch = ref('')
+const snackbar = ref({
+  show: false,
+  message: '',
+  color: 'success'
+})
+const compareOptions = ref(loadPersistedOptions(COMPARE_OPTION_KEY, {
+  compareContent: true,
+  batchSize: 1000,
+  maxRows: 0,
+  ignoreCase: false
+}))
+const syncOptions = ref(loadPersistedOptions(SYNC_OPTION_KEY, {
   executeInsert: true,
   executeUpdate: true,
   executeDelete: false,
   batchSize: 1000,
   useTransaction: true,
   dryRun: false
-})
+}))
+const showMessage = (message, color = 'success') => {
+  snackbar.value = {
+    show: true,
+    message,
+    color
+  }
+}
 
-// 表头
+const sourceTables = computed(() => schemaStore.getTables(sourceConnectionId.value))
+const targetTables = computed(() => schemaStore.getTables(targetConnectionId.value))
+const loadingSourceTables = computed(() => schemaStore.isLoading(sourceConnectionId.value))
+const loadingTargetTables = computed(() => schemaStore.isLoading(targetConnectionId.value))
+const sourceTableSet = computed(() => new Set(sourceTables.value || []))
+const targetTableSet = computed(() => new Set(targetTables.value || []))
+const filteredSourceTables = computed(() => filterTables(sourceTables.value, sourceTableSearch.value))
+const filteredTargetTables = computed(() => filterTables(targetTables.value, targetTableSearch.value))
+const tablePresenceSummary = computed(() => buildTablePresence(sourceTables.value, targetTables.value))
+const validSourceTables = computed(() => tablePresenceSummary.value.overlap)
+const sourceOnlyCount = computed(() => tablePresenceSummary.value.sourceOnly.length)
+const targetOnlyCount = computed(() => tablePresenceSummary.value.targetOnly.length)
+const selectionStats = computed(() => ({
+  total: selectedTables.value.length,
+  valid: targetTableSet.value.size === 0
+    ? selectedTables.value.length
+    : selectedTables.value.filter(table => targetTableSet.value.has(table)).length
+}))
+const canCompare = computed(() =>
+  Boolean(
+    sourceConnectionId.value &&
+    targetConnectionId.value &&
+    selectedTables.value.length > 0 &&
+    !comparing.value
+  )
+)
+
 const tableHeaders = [
   { title: '表名', key: 'tableName', sortable: true },
   { title: '状态', key: 'status', sortable: true },
@@ -1161,123 +1391,75 @@ const tableHeaders = [
   { title: '操作', key: 'actions', sortable: false }
 ]
 
-// 消息提示
-const snackbar = ref({
-  show: false,
-  message: '',
-  color: 'success'
-})
-
-// 计算属性
-const canCompare = computed(() => {
-  return sourceConnectionId.value &&
-         targetConnectionId.value &&
-         selectedTables.value.length > 0 &&
-         !comparing.value
-})
-
-// 过滤后的差异列表 - 使用allDiffs获取所有差异
-const filteredDiffs = computed(() => {
-  // 优先使用allDiffs(所有差异),如果没有则使用sampleDiffs(样本)
-  const diffs = detailDialog.value.data?.allDiffs || detailDialog.value.data?.sampleDiffs
-
-  if (!diffs || diffs.length === 0) {
-    console.warn('没有差异数据')
-    return []
-  }
-
-  console.log('过滤差异列表:', {
-    filterType: detailDialog.value.filterType,
-    totalDiffs: diffs.length,
-    useAllDiffs: !!detailDialog.value.data?.allDiffs
-  })
-
-  if (detailDialog.value.filterType === 'ALL') {
-    return diffs
-  }
-
-  const filtered = diffs.filter(
-    diff => diff.diffType === detailDialog.value.filterType
-  )
-
-  console.log('过滤后的差异:', {
-    filterType: detailDialog.value.filterType,
-    filteredCount: filtered.length
-  })
-
-  return filtered
-})
-
-// 加载连接列表
 const loadConnections = async () => {
   try {
-    const response = await api.connections.getAll()
-    connections.value = response
+    await connectionStore.fetchConnections()
   } catch (error) {
-    console.error('加载连接列表失败:', error)
-    showMessage('加载连接列表失败: ' + error.message, 'error')
+    showMessage('加载连接列表失败: ' + getErrorMessage(error), 'error')
   }
 }
 
-// 源连接变化
+const loadSourceTables = async (force = false) => {
+  if (!sourceConnectionId.value) {
+    return
+  }
+  try {
+    await schemaStore.fetchTables(sourceConnectionId.value, { force })
+  } catch (error) {
+    showMessage('加载源库表列表失败: ' + getErrorMessage(error), 'error')
+  }
+}
+
+const loadTargetTables = async (force = false) => {
+  if (!targetConnectionId.value) {
+    return
+  }
+  try {
+    await schemaStore.fetchTables(targetConnectionId.value, { force })
+  } catch (error) {
+    showMessage('加载目标库表列表失败: ' + getErrorMessage(error), 'error')
+  }
+}
+
+const refreshSourceTables = () => loadSourceTables(true)
+const refreshTargetTables = () => loadTargetTables(true)
+
 const onSourceConnectionChange = async () => {
   selectedTables.value = []
+  sourceTableSearch.value = ''
   await loadSourceTables()
 }
 
-// 目标连接变化
 const onTargetConnectionChange = async () => {
+  targetTableSearch.value = ''
   await loadTargetTables()
 }
 
-// 加载源库表列表
-const loadSourceTables = async () => {
-  if (!sourceConnectionId.value) return
-
-  loadingSourceTables.value = true
-  try {
-    const response = await api.schema.getTables(sourceConnectionId.value)
-    sourceTables.value = response
-  } catch (error) {
-    console.error('加载源库表列表失败:', error)
-    showMessage('加载源库表列表失败: ' + error.message, 'error')
-  } finally {
-    loadingSourceTables.value = false
-  }
-}
-
-// 加载目标库表列表
-const loadTargetTables = async () => {
-  if (!targetConnectionId.value) return
-
-  loadingTargetTables.value = true
-  try {
-    const response = await api.schema.getTables(targetConnectionId.value)
-    targetTables.value = response
-  } catch (error) {
-    console.error('加载目标库表列表失败:', error)
-    showMessage('加载目标库表列表失败: ' + error.message, 'error')
-  } finally {
-    loadingTargetTables.value = false
-  }
-}
-
-// 全选源库表
 const selectAllSourceTables = () => {
-  selectedTables.value = [...sourceTables.value]
+  if (!sourceTables.value) {
+    selectedTables.value = []
+    return
+  }
+  if (targetTableSet.value.size === 0) {
+    selectedTables.value = [...sourceTables.value]
+    return
+  }
+  selectedTables.value = [...validSourceTables.value]
 }
 
-// 清空选择
 const clearSourceTables = () => {
   selectedTables.value = []
 }
 
-// 开始比对
 const startCompare = async () => {
-  if (!canCompare.value) return
+  if (!canCompare.value) {
+    return
+  }
 
   comparing.value = true
   diffResult.value = null
+  detailDialog.value = { show: false, tableName: '', data: null, filterType: 'ALL' }
+  diffViewOptions.value = {}
 
   try {
     const request = {
@@ -1286,103 +1468,77 @@ const startCompare = async () => {
       tableNames: selectedTables.value,
       options: compareOptions.value
     }
-
-    console.log('开始数据比对:', request)
     const response = await api.data.compare(request)
-
-    console.log('比对结果:', response)
-    console.log('表差异列表:', response.tableDiffs)
-
-    // 检查每个表的样本差异
-    response.tableDiffs?.forEach(table => {
-      console.log(`表 ${table.tableName}:`, {
-        insertCount: table.insertCount,
-        updateCount: table.updateCount,
-        deleteCount: table.deleteCount,
-        sampleDiffsCount: table.sampleDiffs?.length || 0,
-        sampleDiffs: table.sampleDiffs
-      })
-    })
-
     diffResult.value = response
+    latestDiffTaskId.value = response.taskId || ''
     showMessage('数据比对完成', 'success')
   } catch (error) {
-    console.error('数据比对失败:', error)
-    const errorMsg = error.response?.data?.message || error.message
-    showMessage('数据比对失败: ' + errorMsg, 'error')
+    showMessage('数据比对失败: ' + getErrorMessage(error), 'error')
   } finally {
     comparing.value = false
   }
 }
 
-// 判断是否有详情可显示
 const hasDetailToShow = (item) => {
-  const hasSamples = item.sampleDiffs && item.sampleDiffs.length > 0
-  const hasDiff = item.insertCount > 0 || item.updateCount > 0 || item.deleteCount > 0
-
-  console.log('检查表详情:', {
-    tableName: item.tableName,
-    hasSamples,
-    sampleDiffsLength: item.sampleDiffs?.length || 0,
-    hasDiff,
-    insertCount: item.insertCount,
-    updateCount: item.updateCount,
-    deleteCount: item.deleteCount,
-    sampleDiffs: item.sampleDiffs
-  })
-
-  return hasSamples
+  const sampleCount = item.sampleDiffs?.length || 0
+  const fullCount = item.allDiffs?.length || 0
+  return sampleCount > 0 || fullCount > 0
 }
 
-// 获取操作提示文本
 const getActionTooltip = (item) => {
-  if (item.sampleDiffs && item.sampleDiffs.length > 0) {
-    return `查看详细差异 (${item.sampleDiffs.length} 条样本)`
+  const sampleCount = item.sampleDiffs?.length || 0
+  const fullCount = item.allDiffs?.length || 0
+  const total = fullCount || sampleCount
+  if (total > 0) {
+    return `查看详细差异 (${total} 条记录)`
   }
-  return '无差异样本数据'
+  if (item.insertCount > 0 || item.updateCount > 0 || item.deleteCount > 0) {
+    return '存在差异但未采集样本'
+  }
+  return '该表没有差异'
 }
 
-// 显示表详情
+const resolveDetailDiffs = () => {
+  const data = detailDialog.value.data
+  if (!data) {
+    return []
+  }
+  if (Array.isArray(data.allDiffs) && data.allDiffs.length > 0) {
+    return data.allDiffs
+  }
+  return data.sampleDiffs || []
+}
+
+const filteredDiffs = computed(() => {
+  const diffs = resolveDetailDiffs()
+  if (!diffs.length) {
+    return []
+  }
+  if (detailDialog.value.filterType === 'ALL') {
+    return diffs
+  }
+  return diffs.filter(diff => diff.diffType === detailDialog.value.filterType)
+})
+
 const showTableDetail = (tableDiff) => {
-  console.log('查看表详情:', tableDiff)
-  console.log('样本差异数据:', tableDiff.sampleDiffs)
-
-  // 重置视图选项
-  diffViewOptions.value = {}
-  globalShowOnlyDiff.value = false
-
-  // 初始化每个差异项的视图选项
-  const diffs = tableDiff.allDiffs || tableDiff.sampleDiffs || []
-  diffs.forEach((_, index) => {
-    diffViewOptions.value[index] = {
-      showOnlyDiff: false
-    }
-  })
-
   detailDialog.value = {
     show: true,
     tableName: tableDiff.tableName,
     data: tableDiff,
     filterType: 'ALL'
   }
+  diffViewOptions.value = {}
+  updateAllDiffViewOptions(globalShowOnlyDiff.value)
 }
 
-// 统计差异类型数量 - 使用allDiffs或sampleDiffs
 const countDiffType = (type) => {
-  const diffs = detailDialog.value.data?.allDiffs || detailDialog.value.data?.sampleDiffs
-
-  if (!diffs) {
-    return 0
-  }
-
+  const diffs = resolveDetailDiffs()
   if (type === 'ALL') {
     return diffs.length
   }
-
   return diffs.filter(diff => diff.diffType === type).length
 }
 
-// 获取差异类型颜色
 const getDiffTypeColor = (type) => {
   switch (type) {
     case 'INSERT': return 'primary'
@@ -1392,7 +1548,6 @@ const getDiffTypeColor = (type) => {
   }
 }
 
-// 获取差异类型文本
 const getDiffTypeText = (type) => {
   switch (type) {
     case 'INSERT': return '新增'
@@ -1403,7 +1558,6 @@ const getDiffTypeText = (type) => {
   }
 }
 
-// 获取差异类型图标
 const getDiffTypeIcon = (type) => {
   switch (type) {
     case 'INSERT': return 'mdi-plus-circle'
@@ -1413,7 +1567,6 @@ const getDiffTypeIcon = (type) => {
   }
 }
 
-// 获取差异头部样式类
 const getDiffHeaderClass = (type) => {
   switch (type) {
     case 'INSERT': return 'bg-blue-lighten-5'
@@ -1423,7 +1576,6 @@ const getDiffHeaderClass = (type) => {
   }
 }
 
-// 切换只显示差异字段
 const toggleShowOnlyDiff = (index) => {
   if (!diffViewOptions.value[index]) {
     diffViewOptions.value[index] = { showOnlyDiff: false }
@@ -1431,7 +1583,6 @@ const toggleShowOnlyDiff = (index) => {
   diffViewOptions.value[index].showOnlyDiff = !diffViewOptions.value[index].showOnlyDiff
 }
 
-// 获取差异摘要
 const getDiffSummary = (item) => {
   const parts = []
   if (item.insertCount > 0) parts.push(`新增 ${item.insertCount} 行`)
@@ -1441,26 +1592,34 @@ const getDiffSummary = (item) => {
   return parts.length > 0 ? parts.join(', ') : '无差异'
 }
 
-// 更新所有差异视图选项
 const updateAllDiffViewOptions = (value) => {
-  if (!detailDialog.value.data?.sampleDiffs) return
-
-  detailDialog.value.data.sampleDiffs.forEach((_, index) => {
+  const diffs = resolveDetailDiffs()
+  diffs.forEach((_, index) => {
     diffViewOptions.value[index] = { showOnlyDiff: value }
   })
 }
 
-// 格式化 JSON
 const formatJson = (jsonStr) => {
   try {
     const obj = typeof jsonStr === 'string' ? JSON.parse(jsonStr) : jsonStr
     return JSON.stringify(obj, null, 2)
-  } catch (e) {
+  } catch (error) {
     return jsonStr
   }
 }
 
-// 获取字段差异
+const parseRowData = (jsonStr) => {
+  try {
+    const obj = typeof jsonStr === 'string' ? JSON.parse(jsonStr) : jsonStr
+    return Object.entries(obj || {}).map(([name, value]) => ({
+      name,
+      value: value !== null && value !== undefined ? String(value) : 'NULL'
+    }))
+  } catch (error) {
+    return []
+  }
+}
+
 const getFieldDiffs = (diff) => {
   try {
     const sourceData = typeof diff.sourceData === 'string'
@@ -1479,95 +1638,39 @@ const getFieldDiffs = (diff) => {
     for (const key of allKeys) {
       const sourceValue = sourceData?.[key]
       const targetValue = targetData?.[key]
-      const isDifferent = sourceValue !== targetValue
-
       fields.push({
         name: key,
         sourceValue: sourceValue !== undefined ? String(sourceValue) : '-',
         targetValue: targetValue !== undefined ? String(targetValue) : '-',
-        isDifferent
+        isDifferent: sourceValue !== targetValue
       })
     }
 
-    // 先显示不同的字段
-    return fields.sort((a, b) => {
-      if (a.isDifferent && !b.isDifferent) return -1
-      if (!a.isDifferent && b.isDifferent) return 1
-      return 0
-    })
-  } catch (e) {
-    console.error('解析字段差异失败:', e)
+    return fields
+  } catch (error) {
     return []
   }
 }
 
-// 获取数据库类型图标
-const getDbTypeIcon = (type) => {
-  switch (type) {
-    case 'mysql': return 'mdi-database'
-    case 'postgresql': return 'mdi-elephant'
-    default: return 'mdi-database'
+const getRowDiffTitle = (diffType) => {
+  switch (diffType) {
+    case 'INSERT': return '需要插入的行'
+    case 'UPDATE': return '需要更新的行'
+    case 'DELETE': return '需要删除的行'
+    default: return '未知操作'
   }
 }
 
-// 获取数据库类型颜色
-const getDbTypeColor = (type) => {
-  switch (type) {
-    case 'mysql': return 'blue'
-    case 'postgresql': return 'green'
-    default: return 'grey'
+const getRowDiffStatus = (diffType) => {
+  switch (diffType) {
+    case 'INSERT': return '源库有但目标库没有'
+    case 'UPDATE': return '两边都有但内容不同'
+    case 'DELETE': return '目标库多余的行'
+    default: return '未知状态'
   }
 }
 
-// 获取状态颜色
-const getStatusColor = (status) => {
-  switch (status) {
-    case 'SUCCESS': return 'success'
-    case 'FAILED': return 'error'
-    case 'NO_PRIMARY_KEY': return 'warning'
-    default: return 'grey'
-  }
-}
-
-// 获取状态文本
-const getStatusText = (status) => {
-  switch (status) {
-    case 'SUCCESS': return '成功'
-    case 'FAILED': return '失败'
-    case 'NO_PRIMARY_KEY': return '无主键'
-    default: return '未知'
-  }
-}
-
-// 显示消息
-const showMessage = (message, color = 'success') => {
-  snackbar.value = {
-    show: true,
-    message,
-    color
-  }
-}
-
-// 解析行数据为字段数组
-const parseRowData = (jsonStr) => {
-  try {
-    const obj = typeof jsonStr === 'string' ? JSON.parse(jsonStr) : jsonStr
-    return Object.entries(obj).map(([name, value]) => ({
-      name,
-      value: value !== null && value !== undefined ? String(value) : 'NULL'
-    }))
-  } catch (e) {
-    console.error('解析行数据失败:', e)
-    return []
-  }
-}
-
-// 判断字段是否不同
-const isFieldDifferent = (diff, fieldName) => {
-  if (diff.diffType !== 'UPDATE') {
-    return false
-  }
-
+const isFieldDiff = (diff, fieldName) => {
   try {
     const sourceData = typeof diff.sourceData === 'string'
       ? JSON.parse(diff.sourceData)
@@ -1575,14 +1678,12 @@ const isFieldDifferent = (diff, fieldName) => {
     const targetData = typeof diff.targetData === 'string'
       ? JSON.parse(diff.targetData)
       : diff.targetData
-
     return sourceData?.[fieldName] !== targetData?.[fieldName]
-  } catch (e) {
+  } catch (error) {
     return false
   }
 }
 
-// 获取行样式类
 const getRowClass = (diffType) => {
   switch (diffType) {
     case 'INSERT': return 'bg-blue-lighten-5'
@@ -1592,54 +1693,51 @@ const getRowClass = (diffType) => {
   }
 }
 
-// 复制到剪贴板
 const copyToClipboard = async (text) => {
   try {
     await navigator.clipboard.writeText(text)
     showMessage('已复制到剪贴板', 'success')
-  } catch (e) {
-    console.error('复制失败:', e)
+  } catch (error) {
     showMessage('复制失败', 'error')
   }
 }
 
-// 是否有数据需要同步
 const hasDataToSync = computed(() => {
-  if (!diffResult.value?.tableDiffs) return false
-
+  if (!diffResult.value?.tableDiffs) {
+    return false
+  }
   return diffResult.value.tableDiffs.some(table =>
-    (table.insertCount > 0 || table.updateCount > 0 || table.deleteCount > 0)
+    table.insertCount > 0 || table.updateCount > 0 || table.deleteCount > 0
   )
 })
 
-// 计算总的新增数量
 const totalInsertCount = computed(() => {
-  if (!diffResult.value?.tableDiffs) return 0
-
+  if (!diffResult.value?.tableDiffs) {
+    return 0
+  }
   return diffResult.value.tableDiffs.reduce((sum, table) =>
     sum + (table.insertCount || 0), 0
   )
 })
 
-// 计算总的更新数量
 const totalUpdateCount = computed(() => {
-  if (!diffResult.value?.tableDiffs) return 0
-
+  if (!diffResult.value?.tableDiffs) {
+    return 0
+  }
   return diffResult.value.tableDiffs.reduce((sum, table) =>
     sum + (table.updateCount || 0), 0
   )
 })
 
-// 计算总的删除数量
 const totalDeleteCount = computed(() => {
-  if (!diffResult.value?.tableDiffs) return 0
-
+  if (!diffResult.value?.tableDiffs) {
+    return 0
+  }
   return diffResult.value.tableDiffs.reduce((sum, table) =>
     sum + (table.deleteCount || 0), 0
   )
 })
 
-// 计算总的同步数量
 const totalSyncCount = computed(() => {
   let count = 0
   if (syncOptions.value.executeInsert) count += totalInsertCount.value
@@ -1648,7 +1746,6 @@ const totalSyncCount = computed(() => {
   return count
 })
 
-// 是否可以同步
 const canSync = computed(() => {
   return (syncOptions.value.executeInsert ||
           syncOptions.value.executeUpdate ||
@@ -1656,9 +1753,10 @@ const canSync = computed(() => {
          totalSyncCount.value > 0
 })
 
-// 执行数据同步
 const executeSyncData = async () => {
-  if (!canSync.value) return
+  if (!canSync.value) {
+    return
+  }
 
   syncing.value = true
 
@@ -1669,56 +1767,43 @@ const executeSyncData = async () => {
       tableNames: selectedTables.value,
       options: syncOptions.value
     }
-
-    console.log('发送同步请求:', request)
-
     const result = await api.data.sync(request)
-
-    console.log('同步结果:', result)
-
     syncResult.value = result
+    latestSyncTaskId.value = result.taskId || ''
     showSyncDialog.value = false
     showSyncResultDialog.value = true
 
     if (result.status === 'COMPLETED') {
       showMessage('数据同步完成', 'success')
-
-      // 重新比对数据
       if (!syncOptions.value.dryRun) {
         await startCompare()
       }
     } else {
-      showMessage('数据同步失败: ' + result.errorMessage, 'error')
+      showMessage('数据同步失败: ' + (result.errorMessage || '未知错误'), 'error')
     }
-
   } catch (error) {
-    console.error('数据同步失败:', error)
-    const errorMsg = error.response?.data?.message || error.message
-    showMessage('数据同步失败: ' + errorMsg, 'error')
+    showMessage('数据同步失败: ' + getErrorMessage(error), 'error')
   } finally {
     syncing.value = false
   }
 }
 
-// 复制 SQL 到剪贴板
 const copySqlToClipboard = async () => {
-  if (!syncResult.value?.generatedSqls) return
-
+  if (!syncResult.value?.generatedSqls?.length) {
+    return
+  }
   const sql = syncResult.value.generatedSqls.join('\n\n')
   await copyToClipboard(sql)
 }
 
-// 下载 SQL 文件
 const downloadSql = () => {
-  if (!syncResult.value?.generatedSqls) return
-
-  // 生成 SQL 内容
+  if (!syncResult.value?.generatedSqls?.length) {
+    return
+  }
   const sql = syncResult.value.generatedSqls.join('\n\n')
-
-  // 添加文件头注释
-  const sourceConn = connections.value.find(c => c.id === sourceConnectionId.value)
-  const targetConn = connections.value.find(c => c.id === targetConnectionId.value)
-
+  const sourceConn = connections.value.find(conn => conn.id === sourceConnectionId.value)
+  const targetConn = connections.value.find(conn => conn.id === targetConnectionId.value)
+  const stats = syncResult.value.statistics || {}
   const header = `-- 数据同步 SQL 脚本
 -- 生成时间: ${new Date().toLocaleString('zh-CN')}
 -- 源数据库: ${sourceConn?.name || ''} (${sourceConn?.host}:${sourceConn?.port}/${sourceConn?.database})
@@ -1726,40 +1811,110 @@ const downloadSql = () => {
 -- 表: ${selectedTables.value.join(', ')}
 --
 -- 统计信息:
---   新增行数: ${syncResult.value.statistics?.insertedRows || 0}
---   更新行数: ${syncResult.value.statistics?.updatedRows || 0}
---   删除行数: ${syncResult.value.statistics?.deletedRows || 0}
+--   新增行数: ${stats.totalInsertedRows || 0}
+--   更新行数: ${stats.totalUpdatedRows || 0}
+--   删除行数: ${stats.totalDeletedRows || 0}
 --
 -- 注意: 请在执行前仔细检查 SQL 语句！
 -- ============================================================
 
 `
-
   const content = header + sql
-
-  // 创建 Blob
   const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
-
-  // 创建下载链接
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
-
-  // 生成文件名：sync_表名_时间戳.sql
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5)
   const tableNames = selectedTables.value.join('_')
-  link.download = `sync_${tableNames}_${timestamp}.sql`
-
-  // 触发下载
+  link.download = `sync_${tableNames || 'tables'}_${timestamp}.sql`
   document.body.appendChild(link)
   link.click()
-
-  // 清理
   document.body.removeChild(link)
   URL.revokeObjectURL(url)
-
   showMessage('SQL 文件已下载', 'success')
 }
+
+const getDbTypeIcon = (type) => {
+  switch (type) {
+    case 'mysql': return 'mdi-database'
+    case 'postgresql': return 'mdi-elephant'
+    default: return 'mdi-database'
+  }
+}
+
+const getDbTypeColor = (type) => {
+  switch (type) {
+    case 'mysql': return 'blue'
+    case 'postgresql': return 'green'
+    default: return 'grey'
+  }
+}
+
+const getStatusColor = (status) => {
+  switch (status) {
+    case 'SUCCESS': return 'success'
+    case 'FAILED': return 'error'
+    case 'NO_PRIMARY_KEY': return 'warning'
+    default: return 'grey'
+  }
+}
+
+const getStatusText = (status) => {
+  switch (status) {
+    case 'SUCCESS': return '成功'
+    case 'FAILED': return '失败'
+    case 'NO_PRIMARY_KEY': return '无主键'
+    default: return '未知'
+  }
+}
+
+const openTaskCenter = (taskId) => {
+  if (!taskId) {
+    return
+  }
+  router.push({ name: 'tasks', query: { taskId } })
+}
+
+watch(compareOptions, (value) => persistOptions(COMPARE_OPTION_KEY, value), { deep: true })
+watch(syncOptions, (value) => persistOptions(SYNC_OPTION_KEY, value), { deep: true })
+watch(sourceConnectionId, async () => {
+  await loadSourceTables()
+})
+watch(targetConnectionId, async () => {
+  await loadTargetTables()
+})
+watch(selectedTables, (tables) => {
+  const unique = Array.from(new Set(tables))
+  if (unique.length !== tables.length) {
+    selectedTables.value = unique
+  }
+}, { deep: true })
+
+let trimmingSelection = false
+watch(
+  () => [selectedTables.value, targetTableSet.value],
+  () => {
+    if (trimmingSelection || targetTableSet.value.size === 0 || !selectedTables.value.length) {
+      return
+    }
+    const filtered = selectedTables.value.filter(table => targetTableSet.value.has(table))
+    if (filtered.length !== selectedTables.value.length) {
+      trimmingSelection = true
+      selectedTables.value = filtered
+      trimmingSelection = false
+      showMessage('已移除目标库不存在的表', 'warning')
+    }
+  },
+  { deep: true }
+)
+
+watch(
+  () => [sourceConnectionId.value, targetConnectionId.value],
+  () => {
+    diffResult.value = null
+    latestDiffTaskId.value = ''
+  }
+)
 
 onMounted(() => {
   loadConnections()
@@ -2032,5 +2187,3 @@ onMounted(() => {
   }
 }
 </style>
-
-
